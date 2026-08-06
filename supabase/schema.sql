@@ -95,3 +95,43 @@ create table if not exists higgsfield_jobs (
   output_url text,
   created_at timestamptz not null default now()
 );
+
+-- RLS: the dashboard embeds NEXT_PUBLIC_SUPABASE_ANON_KEY client-side, which
+-- makes that key effectively public. Lock it to read-only. Agents write via
+-- SUPABASE_SERVICE_ROLE_KEY, which bypasses RLS, so this doesn't affect them.
+alter table agent_memory enable row level security;
+alter table lead_queue enable row level security;
+alter table content_queue enable row level security;
+alter table agent_logs enable row level security;
+alter table dashboard_metrics enable row level security;
+alter table risk_flags enable row level security;
+alter table experiments enable row level security;
+alter table higgsfield_jobs enable row level security;
+
+do $$
+begin
+  if not exists (select 1 from pg_policies where tablename = 'agent_memory' and policyname = 'anon read agent_memory') then
+    create policy "anon read agent_memory" on agent_memory for select to anon using (true);
+  end if;
+  if not exists (select 1 from pg_policies where tablename = 'lead_queue' and policyname = 'anon read lead_queue') then
+    create policy "anon read lead_queue" on lead_queue for select to anon using (true);
+  end if;
+  if not exists (select 1 from pg_policies where tablename = 'content_queue' and policyname = 'anon read content_queue') then
+    create policy "anon read content_queue" on content_queue for select to anon using (true);
+  end if;
+  if not exists (select 1 from pg_policies where tablename = 'agent_logs' and policyname = 'anon read agent_logs') then
+    create policy "anon read agent_logs" on agent_logs for select to anon using (true);
+  end if;
+  if not exists (select 1 from pg_policies where tablename = 'dashboard_metrics' and policyname = 'anon read dashboard_metrics') then
+    create policy "anon read dashboard_metrics" on dashboard_metrics for select to anon using (true);
+  end if;
+  if not exists (select 1 from pg_policies where tablename = 'risk_flags' and policyname = 'anon read risk_flags') then
+    create policy "anon read risk_flags" on risk_flags for select to anon using (true);
+  end if;
+  if not exists (select 1 from pg_policies where tablename = 'experiments' and policyname = 'anon read experiments') then
+    create policy "anon read experiments" on experiments for select to anon using (true);
+  end if;
+  if not exists (select 1 from pg_policies where tablename = 'higgsfield_jobs' and policyname = 'anon read higgsfield_jobs') then
+    create policy "anon read higgsfield_jobs" on higgsfield_jobs for select to anon using (true);
+  end if;
+end $$;

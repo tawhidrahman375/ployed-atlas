@@ -54,7 +54,7 @@ Copy `.env.example` to `.env` (runner) and `dashboard/.env.example` to `dashboar
 **Dashboard (Vercel) — project env vars:**
 `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 
-Note: the 8 tables have no RLS policies, so the anon key can read everything. That's intentional for a private-URL-only dashboard with no login — don't reuse this Supabase project's anon key anywhere public-facing.
+Note: RLS is enabled on all 8 tables with a read-only policy for the `anon` role (see the bottom of `supabase/schema.sql`). The anon key is embedded client-side in the dashboard, so it's effectively public — read-only keeps that safe. Agents write via `SUPABASE_SERVICE_ROLE_KEY`, which bypasses RLS, so this doesn't affect the runner.
 
 ## Running on the VPS
 
