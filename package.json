@@ -1,0 +1,30 @@
+{
+  "name": "ployed-atlas",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "description": "ATLAS growth OS for Ployed — autonomous agent runner, background jobs, and dashboard data layer",
+  "scripts": {
+    "start": "tsx src/server.ts",
+    "morning": "tsx src/agents/atlas.ts morning",
+    "evening": "tsx src/agents/atlas.ts evening",
+    "collect:gsc": "tsx scripts/pull-gsc.ts",
+    "collect:posthog": "tsx scripts/pull-posthog.ts",
+    "collect:competitors": "tsx scripts/scrape-competitors.ts",
+    "collect:youtube-queue": "tsx scripts/queue-youtube.ts",
+    "collect:reddit": "tsx scripts/pull-reddit.ts",
+    "collect:producthunt": "tsx scripts/check-producthunt.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.0",
+    "@supabase/supabase-js": "^2.112.0",
+    "dotenv": "^16.4.5",
+    "stripe": "^17.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "tsx": "^4.19.0",
+    "typescript": "~6.0.2"
+  }
+}
