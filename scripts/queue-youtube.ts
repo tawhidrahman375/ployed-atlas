@@ -1,15 +1,15 @@
 import { remember } from '../src/mnemos.js';
 
-// Fill in real YouTube channel IDs (the "UC..." string, found in a channel's
-// page source or via https://commentpicker.com/youtube-channel-id.php).
-// These are not secrets — no .env entry needed, just real values here.
+// From the Ployed Marketing Agent — Master Plan doc in Notion.
+// Verified against each channel's og:title on 2026-08-06 (source repo is
+// public — no secrets here, just channel IDs).
 const CHANNELS: Record<string, string> = {
-  'Starter Story': '',
-  'My First Million': '',
-  'Greg Isenberg': '',
-  'Alex Hormozi': '',
-  "Lenny's Podcast": '',
-  Superwall: '',
+  'Starter Story': 'UChhw6DlKKTQ9mYSpTfXUYqA',
+  'My First Million': 'UCxoRKax_0vHaulMbceZtAwA',
+  'Greg Isenberg': 'UCPjNBjflYl0-HQtUvOx0Ibw',
+  'Alex Hormozi': 'UCrvchO1h6lWZAuGaa1LqX9Q',
+  "Lenny's Podcast": 'UC6t1O76G0jYXOAoYCm153dA',
+  Superwall: 'UCWWlrm9Y5ZjYzfi_H0caBhw',
 };
 
 async function latestVideoId(channelId: string): Promise<string | null> {
