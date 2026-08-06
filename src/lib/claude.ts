@@ -27,6 +27,11 @@ export async function ask(
     system,
     messages: [{ role: 'user', content: prompt }],
   });
-  const block = res.content[0];
-  return block?.type === 'text' ? block.text : '';
+  // claude-sonnet-5 returns extended-thinking content as a leading `thinking`
+  // block, so the real answer isn't always content[0] — collect every `text`
+  // block instead of assuming position.
+  return res.content
+    .filter((block): block is Anthropic.TextBlock => block.type === 'text')
+    .map((block) => block.text)
+    .join('\n');
 }

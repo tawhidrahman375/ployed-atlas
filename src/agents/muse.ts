@@ -45,7 +45,8 @@ export async function run() {
     const page = await ask(
       'quality',
       `${system} Write an 800-1500 word SEO page that fully answers the search intent, with a naturally embedded CTA for Ployed.`,
-      `Keyword: ${keyword}\n${context}`
+      `Keyword: ${keyword}\n${context}`,
+      4096 // 800-1500 words plus thinking overhead needs more than the 2048 default
     );
     seoPages.push(await saveContent('seo_page', keyword, page));
   }
