@@ -10,7 +10,9 @@ As of 2026-08-08, every agent is real, tested code — not just plumbing. Confir
 
 **Apollo** finds leads via the Brave Search API — 8 targeted `site:linkedin.com/in` / `site:x.com` searches across the ICP (AI automation agencies, GHL agencies, web design agencies, SMMA operators), with Claude extracting real individual profiles from the results and deduping against everything already in `lead_queue`. Google Custom Search was the original plan, but the Google Cloud org this account sits under blocks plain API key creation via a default security policy that couldn't be safely overridden — Brave was the pragmatic swap (note: Brave dropped its free tier in early 2026; it's a card-on-file, $5/month-credit plan now, though Apollo's ~240 queries/month stays well inside that). **Confirmed working live**: one real run found 56 genuine, well-qualified candidates (real founders/owners, specific per-lead signals, zero duplicates, zero garbage).
 
-LinkedIn/X search snippets don't expose email addresses on their own, so Apollo now enriches a small batch per run (`MAX_ENRICHMENTS_PER_RUN = 5`) via Hunter.io's Email Finder, using its `linkedin_handle` lookup — no company domain needed, which Apollo doesn't reliably have. Free tier is 25 lookups/month total; capping at 5/run spreads that across many days instead of one run burning the month. Needs `HUNTER_API_KEY` — code is written and typechecked but **not yet verified live** (pending that key). Leads that don't get enriched (most of them, past the 5/run cap, or X-platform leads which aren't supported) still queue for manual outreach (X DM / LinkedIn comment, per the original spec) — drafting those manual-channel messages isn't built yet.
+LinkedIn/X search snippets don't expose email addresses on their own, so Apollo now enriches a small batch per run (`MAX_ENRICHMENTS_PER_RUN = 5`) via Hunter.io's Email Finder, using its `linkedin_handle` lookup — no company domain needed, which Apollo doesn't reliably have. Free tier is 25 lookups/month total; capping at 5/run spreads that across many days instead of one run burning the month. **Confirmed working live**: `reidhoffman` → `rhoffman@greylock.com`, a real, correctly-patterned match. Most smaller/newer founders (the actual ICP) aren't in Hunter's database yet and correctly come back as "not found" rather than erroring — one real bug caught here: Hunter returns a `404` for handles it doesn't have on record (not a `200` with `data.email: null` like the docs implied), which the code originally treated as a thrown error instead of a normal miss; fixed. Leads that don't get enriched still queue for manual outreach (X DM / LinkedIn comment, per the original spec) — drafting those manual-channel messages isn't built yet.
+
+One account-setup note if you ever regenerate this key: Hunter briefly returned `429 restricted_account` until phone verification was completed on the Hunter dashboard — nothing to do with the code, just their signup flow.
 
 Every agent is now real, tested code — nothing in the repo uses `notWired(` anymore. Anything that later loses a credential still fails loudly with a clear error naming the missing env var, rather than silently doing nothing.
 
@@ -27,7 +29,7 @@ Every agent is now real, tested code — nothing in the repo uses `notWired(` an
 | Ledger | ✅ real | Reads live MRR from Stripe (`sk_live_...` key); webhook *listener* still isn't deployed anywhere (see step 3) |
 | Echo | ✅ real, gated | Needs `INSTANTLY_CAMPAIGN_ID` set on purpose before it can send anything live |
 | Apollo | ✅ real | Brave Search API; verified live with a real run (56 qualified candidates, 0 duplicates) |
-| Apollo (email enrichment) | 🟡 real, untested | Hunter.io `linkedin_handle` lookup, capped at 5/run; needs `HUNTER_API_KEY` |
+| Apollo (email enrichment) | ✅ real | Hunter.io `linkedin_handle` lookup, capped at 5/run; verified live with a real match |
 
 ## Build order
 
@@ -148,10 +150,10 @@ vercel --prod
 
 ## A note on autonomy
 
-Echo's Instantly integration is real, working code today — the only thing stopping `npm run morning` from sending real cold emails is that `INSTANTLY_CAMPAIGN_ID` is unset. Apollo now finds real leads (verified: 56 in one run) and can enrich a few per run with real emails via Hunter.io, once `HUNTER_API_KEY` is set — so this gate is closer to open than it was. Before removing it:
+Echo's Instantly integration is real, working code today — the only thing stopping `npm run morning` from sending real cold emails is that `INSTANTLY_CAMPAIGN_ID` is unset. Apollo now finds real leads (verified: 56 in one run) and enriches up to 5/run with real emails via Hunter.io (verified live). Before removing the campaign gate:
 
-1. Apollo is already finding real, relevant candidates — nothing to do here.
-2. Set `HUNTER_API_KEY` and confirm Hunter enrichment is actually attaching real emails (untested as of this writing) — at most 5 leads/run will get one, the rest still need manual outreach.
+1. Apollo is already finding real, relevant candidates and attaching real emails where Hunter has them — nothing to do here.
+2. Most of the actual ICP (small, newer agency founders) won't be in Hunter's database yet, so expect most leads to still lack an email and need manual outreach — that's Hunter's data coverage, not a bug.
 3. Create an actual campaign in Instantly, set `INSTANTLY_CAMPAIGN_ID` to its ID.
 4. Test with a very small, known-safe lead list first — once all of the above are in place, every `npm run morning` sends real emails to real people with no per-email confirmation. This now runs on a schedule (crontab, 08:00 daily) on the live VPS, so "in place" means it fires automatically, not just when you happen to run it by hand.
 5. Keep Sentinel's bounce-rate check running (it's real and wired) before scaling volume.

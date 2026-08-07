@@ -15,6 +15,7 @@ export async function findEmailByLinkedIn(profileUrl: string): Promise<string | 
   url.searchParams.set('api_key', requireEnv('HUNTER_API_KEY'));
 
   const res = await fetch(url);
+  if (res.status === 404) return null; // handle not in Hunter's database — a normal miss, not an error
   if (!res.ok) {
     throw new Error(`Hunter.io lookup failed: ${res.status} ${await res.text()}`);
   }
