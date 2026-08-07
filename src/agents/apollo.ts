@@ -1,7 +1,12 @@
 import { ask } from '../lib/claude.js';
 import { customSearch } from '../lib/brave-search.js';
+import { findEmailByLinkedIn } from '../lib/hunter.js';
 import { recall, remember, logAgentRun } from '../mnemos.js';
 import { supabase } from '../lib/supabase.js';
+
+// Hunter's free tier is 25 searches/month total — capping per run spreads
+// that across many days instead of one run burning the whole month.
+const MAX_ENRICHMENTS_PER_RUN = 5;
 
 interface Candidate {
   name: string;
@@ -9,6 +14,7 @@ interface Candidate {
   platform: 'linkedin' | 'x';
   niche: string;
   signals: string;
+  email?: string;
 }
 
 // ICP priority order from the spec: AI automation agencies first, then GHL,
@@ -97,22 +103,38 @@ export async function run() {
     return [] as Candidate[];
   });
 
+  // LinkedIn/X search snippets don't expose email addresses on their own, so
+  // enrich a small batch via Hunter.io (linkedin_handle lookup — no company
+  // domain needed). Leads that don't get enriched still queue for manual
+  // X DM / LinkedIn comment outreach; enriched ones become eligible for
+  // Echo's Instantly path immediately.
+  let enriched = 0;
+  for (const c of candidates) {
+    if (enriched >= MAX_ENRICHMENTS_PER_RUN || c.platform !== 'linkedin') continue;
+    try {
+      const email = await findEmailByLinkedIn(c.handle);
+      if (email) {
+        c.email = email;
+        enriched += 1;
+      }
+    } catch (err) {
+      console.error(`[Apollo] Hunter.io lookup failed for ${c.handle}:`, (err as Error).message);
+    }
+  }
+
   if (candidates.length) {
-    // No email field: LinkedIn/X search snippets don't expose email
-    // addresses. These leads are real profiles, ready for X DM / LinkedIn
-    // comment drafts — Echo's Instantly path only acts on leads that do
-    // have an email, so these sit queued for manual outreach for now.
     const { error } = await supabase.from('lead_queue').insert(candidates.map((c) => ({ ...c, status: 'queued' })));
     if (error) throw error;
   }
 
   await remember(
     'icp_profiles',
-    { batchSize: candidates.length, ts: new Date().toISOString() },
+    { batchSize: candidates.length, enriched, ts: new Date().toISOString() },
     { source: 'Apollo' }
   );
-  await logAgentRun('Apollo', 'morning', `Found ${candidates.length} qualified leads.`, {
+  await logAgentRun('Apollo', 'morning', `Found ${candidates.length} qualified leads, enriched ${enriched} with email.`, {
     count: candidates.length,
+    enriched,
   });
 
   return candidates.length;
