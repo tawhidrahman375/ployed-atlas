@@ -1,166 +1,196 @@
 import { supabase } from '../lib/supabase';
+import { AGENTS } from '../lib/agents';
+import LiveClock from '../components/LiveClock';
+import Hero from '../components/Hero';
+import AgentFleet, { type AgentActivity } from '../components/AgentFleet';
+import StatGrid from '../components/StatGrid';
+import LeadFunnel from '../components/LeadFunnel';
+import RiskFlags from '../components/RiskFlags';
+import ContentFeed from '../components/ContentFeed';
+import JobsGrid from '../components/JobsGrid';
+import ExperimentsList from '../components/ExperimentsList';
+import ActivityTimeline from '../components/ActivityTimeline';
+import {
+  AlertTriangleIcon,
+  ClockIcon,
+  FileTextIcon,
+  FilmIcon,
+  FlaskIcon,
+  SearchIcon,
+  TrendingUpIcon,
+} from '../components/icons';
 
 export const revalidate = 300; // 5 minutes
 
-const AGENTS = ['Atlas', 'Mnemos', 'Nova', 'Vega', 'Apollo', 'Echo', 'Muse', 'Pixel', 'Pulse', 'Ledger', 'Sentinel', 'Forge'];
-
-const STAGE_LABELS: Record<number, string> = {
-  1: 'Stage 1 — First sale',
-  2: 'Stage 2 — First sale → £1k',
-  3: 'Stage 3 — £1k → £5k',
-  4: 'Stage 4 — £5k → £10k',
-  5: 'Stage 5 — £10k → £20k',
-};
-
-async function getMetric(name: string): Promise<string> {
-  const { data } = await supabase
-    .from('dashboard_metrics')
-    .select('metric_value')
-    .eq('metric_name', name)
-    .maybeSingle();
-  return data?.metric_value ?? '0';
-}
-
-function agentStatusEmoji(lastSeenIso: string | undefined): string {
-  if (!lastSeenIso) return '⚪';
-  const hoursSince = (Date.now() - new Date(lastSeenIso).getTime()) / 3_600_000;
-  if (hoursSince < 24) return '🟢';
-  if (hoursSince < 48) return '🟡';
-  return '🔴';
-}
-
-function stageFromMrr(mrr: number): number {
-  if (mrr >= 10000) return 5;
-  if (mrr >= 5000) return 4;
-  if (mrr >= 1000) return 3;
-  if (mrr > 0) return 2;
-  return 1;
+function metricMap(rows: { metric_name: string; metric_value: string | null }[] | null): Map<string, string> {
+  return new Map((rows ?? []).map((r) => [r.metric_name, r.metric_value ?? '0']));
 }
 
 export default async function Page() {
-  const [mrrPence, emailsSent, leadsFound, gscClicks, gscImpressions] = await Promise.all([
-    getMetric('mrr_pence'),
-    getMetric('emails_sent_today'),
-    getMetric('leads_found_today'),
-    getMetric('gsc_clicks_today'),
-    getMetric('gsc_impressions_today'),
-  ]);
-  const mrr = Number(mrrPence) / 100;
-  const stage = stageFromMrr(mrr);
+  const [{ data: metricsRows }, { data: logs }, { data: risks }, { data: content }, { data: jobs }, { data: experiments }, { data: leadStatuses }, { data: memoryRows }] =
+    await Promise.all([
+      supabase.from('dashboard_metrics').select('metric_name, metric_value'),
+      supabase.from('agent_logs').select('id, agent, session_type, summary, created_at').order('created_at', { ascending: false }).limit(300),
+      supabase.from('risk_flags').select('*').eq('resolved', false).order('created_at', { ascending: false }),
+      supabase.from('content_queue').select('*').eq('status', 'ready').order('created_at', { ascending: false }).limit(150),
+      supabase.from('higgsfield_jobs').select('*').order('created_at', { ascending: false }).limit(9),
+      supabase.from('experiments').select('*').order('started_at', { ascending: false }).limit(20),
+      supabase.from('lead_queue').select('status').limit(5000),
+      supabase.from('agent_memory').select('category').limit(5000),
+    ]);
 
-  const { data: logs } = await supabase
-    .from('agent_logs')
-    .select('agent, created_at')
-    .order('created_at', { ascending: false })
-    .limit(300);
-  const lastSeenByAgent = new Map<string, string>();
+  const metrics = metricMap(metricsRows);
+  const mrr = Number(metrics.get('mrr_pence') ?? 0) / 100;
+
+  // Last-seen + last-summary per agent, from the most recent 300 log rows.
+  const activityByAgent = new Map<string, AgentActivity>();
   for (const row of logs ?? []) {
-    if (!lastSeenByAgent.has(row.agent)) lastSeenByAgent.set(row.agent, row.created_at);
+    if (!activityByAgent.has(row.agent)) {
+      activityByAgent.set(row.agent, { lastSeen: row.created_at, lastSummary: row.summary ?? undefined });
+    }
   }
 
-  const { data: risks } = await supabase
-    .from('risk_flags')
-    .select('*')
-    .eq('resolved', false)
-    .order('created_at', { ascending: false });
-  const { data: content } = await supabase
-    .from('content_queue')
-    .select('*')
-    .eq('status', 'ready')
-    .order('created_at', { ascending: false })
-    .limit(20);
-  const { data: jobs } = await supabase
-    .from('higgsfield_jobs')
-    .select('*')
-    .order('created_at', { ascending: false })
-    .limit(10);
-  const { data: experiments } = await supabase.from('experiments').select('*').eq('status', 'running');
+  const leadCounts: Record<string, number> = {};
+  for (const row of leadStatuses ?? []) {
+    leadCounts[row.status] = (leadCounts[row.status] ?? 0) + 1;
+  }
+
+  const memoryCounts = new Map<string, number>();
+  for (const row of memoryRows ?? []) {
+    memoryCounts.set(row.category, (memoryCounts.get(row.category) ?? 0) + 1);
+  }
+  const memoryCategories = [...memoryCounts.entries()]
+    .map(([category, count]) => ({ category, count }))
+    .sort((a, b) => b.count - a.count);
+
+  const nowIso = new Date().toISOString();
 
   return (
-    <main>
-      <header>
-        <h1>PLOYED GROWTH OS</h1>
-        <span>{new Date().toLocaleString('en-GB', { timeZone: 'UTC' })} UTC</span>
-      </header>
-
-      <section className="hero">
-        <h2>{STAGE_LABELS[stage]}</h2>
-        <div className="mrr">MRR: £{mrr.toFixed(2)}</div>
-      </section>
-
-      <section>
-        <h3>Agent status</h3>
-        <div className="agent-grid">
-          {AGENTS.map((agent) => (
-            <span key={agent}>
-              {agentStatusEmoji(lastSeenByAgent.get(agent))} {agent}
-            </span>
-          ))}
+    <main className="page">
+      <div className="top-bar">
+        <div className="brand">
+          <span className="brand-mark">PLOYED GROWTH OS</span>
+          <span className="brand-sub">ATLAS · {AGENTS.length} agents</span>
         </div>
-      </section>
-
-      <section>
-        <h3>Today&rsquo;s numbers</h3>
-        <div className="numbers-grid">
-          <div>📧 Emails sent: {emailsSent}</div>
-          <div>🔍 Leads found: {leadsFound}</div>
-          <div>🌐 GSC clicks: {gscClicks}</div>
-          <div>🌐 GSC impressions: {gscImpressions}</div>
+        <div className="top-bar-right">
+          <span className="live-pill">
+            <span className="live-pill-dot" />
+            Live
+          </span>
+          <LiveClock initial={new Date(nowIso).toLocaleString('en-GB', { timeZone: 'UTC' }) + ' UTC'} />
         </div>
-      </section>
+      </div>
 
-      <section>
-        <h3>Risk flags</h3>
-        {!risks?.length && <div className="ok">🟢 All clear</div>}
-        {risks?.map((r) => (
-          <div key={r.id} className="risk">
-            {r.level === 'red' ? '🔴' : r.level === 'yellow' ? '🟡' : '🟢'} [{r.agent}] {r.message}
+      <Hero mrr={mrr} />
+
+      <section className="section">
+        <div className="section-head">
+          <div className="section-title-group">
+            <h3 className="section-title">Agent fleet</h3>
           </div>
-        ))}
+          <span className="section-sub">green = active &lt;24h · amber = stale · cyan = always-on</span>
+        </div>
+        <AgentFleet activityByAgent={activityByAgent} memoryCategories={memoryCategories} />
       </section>
 
-      <section>
-        <h3>Content ready to download</h3>
-        {!content?.length && <div>Nothing yet.</div>}
-        <ul>
-          {content?.map((c) => (
-            <li key={c.id}>
-              📄 {c.type}: {c.title} — <a href={c.file_path}>download</a>
-            </li>
-          ))}
-        </ul>
+      <section className="section">
+        <div className="section-head">
+          <div className="section-title-group">
+            <span className="section-icon">
+              <TrendingUpIcon size={15} />
+            </span>
+            <h3 className="section-title">Today&rsquo;s numbers</h3>
+          </div>
+        </div>
+        <StatGrid
+          emailsSent={Number(metrics.get('emails_sent_today') ?? 0)}
+          leadsFound={Number(metrics.get('leads_found_today') ?? 0)}
+          gscClicks={Number(metrics.get('gsc_clicks_today') ?? 0)}
+          gscImpressions={Number(metrics.get('gsc_impressions_today') ?? 0)}
+          posthogEvents={Number(metrics.get('posthog_events_today') ?? 0)}
+          instantlyBounced={Number(metrics.get('instantly_bounced_today') ?? 0)}
+          instantlyReplies={Number(metrics.get('instantly_replies_today') ?? 0)}
+        />
       </section>
 
-      <section>
-        <h3>Higgsfield jobs</h3>
-        {!jobs?.length && <div>None yet.</div>}
-        <ul>
-          {jobs?.map((j) => (
-            <li key={j.id}>
-              🎬 {j.concept ?? j.job_id} — {j.status}
-              {j.status === 'complete' && j.output_url ? (
-                <>
-                  {' '}
-                  — <a href={j.output_url}>download</a>
-                </>
-              ) : null}
-            </li>
-          ))}
-        </ul>
+      <section className="section">
+        <div className="section-head">
+          <div className="section-title-group">
+            <span className="section-icon">
+              <SearchIcon size={15} />
+            </span>
+            <h3 className="section-title">Lead pipeline</h3>
+          </div>
+        </div>
+        <LeadFunnel counts={leadCounts} />
       </section>
 
-      <section>
-        <h3>Active experiments (Forge)</h3>
-        {!experiments?.length && <div>None running.</div>}
-        <ul>
-          {experiments?.map((e) => (
-            <li key={e.id}>🧪 {e.hypothesis}</li>
-          ))}
-        </ul>
+      <section className="section">
+        <div className="section-head">
+          <div className="section-title-group">
+            <span className="section-icon">
+              <AlertTriangleIcon size={15} />
+            </span>
+            <h3 className="section-title">Risk flags</h3>
+          </div>
+        </div>
+        <RiskFlags flags={risks ?? []} />
       </section>
 
-      <footer>
+      <section className="section">
+        <div className="section-head">
+          <div className="section-title-group">
+            <span className="section-icon">
+              <FileTextIcon size={15} />
+            </span>
+            <h3 className="section-title">Content ready to download</h3>
+          </div>
+        </div>
+        <ContentFeed rows={content ?? []} />
+      </section>
+
+      <section className="section">
+        <div className="section-head">
+          <div className="section-title-group">
+            <span className="section-icon">
+              <FilmIcon size={15} />
+            </span>
+            <h3 className="section-title">Higgsfield jobs</h3>
+          </div>
+        </div>
+        <JobsGrid jobs={jobs ?? []} />
+      </section>
+
+      <section className="section">
+        <div className="section-head">
+          <div className="section-title-group">
+            <span className="section-icon">
+              <FlaskIcon size={15} />
+            </span>
+            <h3 className="section-title">Active experiments (Forge)</h3>
+          </div>
+        </div>
+        <ExperimentsList experiments={experiments ?? []} />
+      </section>
+
+      <section className="section">
+        <div className="section-head">
+          <div className="section-title-group">
+            <span className="section-icon">
+              <ClockIcon size={15} />
+            </span>
+            <h3 className="section-title">Activity</h3>
+          </div>
+          <span className="section-sub">most recent 15 runs</span>
+        </div>
+        <ActivityTimeline logs={(logs ?? []).slice(0, 15)} />
+      </section>
+
+      <footer className="footer">
         <p>Auto-refreshes every 5 minutes. No login — this URL is the security boundary, keep it private.</p>
+        <p>
+          <a href="https://github.com/tawhidrahman375/ployed-atlas">ployed-atlas on GitHub</a>
+        </p>
       </footer>
     </main>
   );
