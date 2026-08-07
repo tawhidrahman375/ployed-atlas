@@ -1,14 +1,42 @@
-import { remember, logAgentRun } from '../mnemos.js';
-import { notWired } from '../lib/not-wired.js';
+import { recall, remember, logAgentRun } from '../mnemos.js';
 
 // Adjust to the real competitor domains once confirmed.
 const COMPETITORS = ['clay.com', 'agensi.ai', 'gohighlevel.com', 'sitedrop.io'];
 const SUBREDDITS = ['AIAssistants', 'automation', 'agency'];
+const MAX_SNAPSHOT_CHARS = 8000;
+
+interface CompetitorSnapshot {
+  domain: string;
+  type: 'snapshot';
+  text: string;
+}
+
+function extractText(html: string): string {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 
 async function scrapeCompetitor(domain: string): Promise<string> {
-  // TODO: fetch the pricing/landing page and diff against the last snapshot
-  // stored under the competitor_intel memory category. No key required.
-  notWired('Vega', `scrape ${domain}`, 'N/A — implement fetch/parse');
+  const res = await fetch(`https://${domain}`, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+  if (!res.ok) throw new Error(`Fetch failed for ${domain}: ${res.status}`);
+  const text = extractText(await res.text()).slice(0, MAX_SNAPSHOT_CHARS);
+
+  const previous = await recall('competitor_intel', 50);
+  const lastSnapshot = previous
+    .map((e) => e.content as unknown as CompetitorSnapshot)
+    .find((c) => c?.domain === domain && c?.type === 'snapshot');
+  const changed = !lastSnapshot || lastSnapshot.text !== text;
+
+  await remember('competitor_intel', { domain, type: 'snapshot', text } satisfies CompetitorSnapshot, {
+    source: 'Vega',
+  });
+
+  if (!lastSnapshot) return 'First snapshot taken.';
+  return changed ? 'Changed since last check.' : 'No change since last check.';
 }
 
 async function pullSubredditTitles(subreddit: string): Promise<string[]> {

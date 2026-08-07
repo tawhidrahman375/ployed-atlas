@@ -1,12 +1,25 @@
 import { supabase } from '../lib/supabase.js';
+import { getCampaignAnalytics } from '../lib/instantly.js';
 import { logAgentRun } from '../mnemos.js';
-import { notWired } from '../lib/not-wired.js';
 
 const BOUNCE_YELLOW = 0.03;
 const BOUNCE_RED = 0.05;
+const LOOKBACK_DAYS = 7; // a single day's ratio is too noisy at low volume
 
 async function getInstantlyBounceRate(): Promise<number> {
-  notWired('Sentinel', 'Instantly bounce rate check', 'INSTANTLY_API_KEY');
+  const end = new Date();
+  const start = new Date(end.getTime() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
+  const analytics = await getCampaignAnalytics(start.toISOString().slice(0, 10), end.toISOString().slice(0, 10));
+
+  const totals = analytics.reduce(
+    (acc, c) => ({
+      sent: acc.sent + (c.emails_sent_count ?? 0),
+      bounced: acc.bounced + (c.bounced_count ?? 0),
+    }),
+    { sent: 0, bounced: 0 }
+  );
+
+  return totals.sent > 0 ? totals.bounced / totals.sent : 0;
 }
 
 async function flag(level: 'green' | 'yellow' | 'red', agent: string, message: string): Promise<void> {

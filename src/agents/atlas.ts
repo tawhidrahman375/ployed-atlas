@@ -1,5 +1,3 @@
-import { mkdir, writeFile } from 'node:fs/promises';
-import path from 'node:path';
 import { supabase } from '../lib/supabase.js';
 import { logAgentRun } from '../mnemos.js';
 import * as nova from './nova.js';
@@ -11,7 +9,23 @@ import * as pulse from './pulse.js';
 import * as sentinel from './sentinel.js';
 import * as forge from './forge.js';
 
-const REPORT_DIR = path.resolve('output', 'reports');
+const REPORT_BUCKET = 'atlas-content';
+
+async function saveReport(title: string, body: string): Promise<string> {
+  const objectPath = `daily_report/${Date.now()}-${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.md`;
+  const { error: uploadError } = await supabase.storage
+    .from(REPORT_BUCKET)
+    .upload(objectPath, body, { contentType: 'text/markdown' });
+  if (uploadError) throw uploadError;
+
+  const { data: publicUrl } = supabase.storage.from(REPORT_BUCKET).getPublicUrl(objectPath);
+  const { error } = await supabase
+    .from('content_queue')
+    .insert({ type: 'daily_report', title, file_path: publicUrl.publicUrl, status: 'ready' });
+  if (error) throw error;
+
+  return publicUrl.publicUrl;
+}
 
 interface StageInfo {
   stage: number;
@@ -97,11 +111,9 @@ async function morningBlock(): Promise<void> {
     `${experiments?.length ?? 0} currently running.`,
   ].join('\n');
 
-  await mkdir(REPORT_DIR, { recursive: true });
-  const reportPath = path.join(REPORT_DIR, `${Date.now()}-morning.md`);
-  await writeFile(reportPath, report, 'utf-8');
+  const reportUrl = await saveReport(`Morning Report ${new Date().toISOString().slice(0, 10)}`, report);
 
-  await logAgentRun('Atlas', 'morning', 'Morning block complete.', { stage: stageInfo.stage, reportPath });
+  await logAgentRun('Atlas', 'morning', 'Morning block complete.', { stage: stageInfo.stage, reportUrl });
   console.log(report);
 }
 
@@ -110,8 +122,9 @@ async function eveningBlock(): Promise<void> {
 
   await runStep('Pulse', () => pulse.run());
   await runStep('Sentinel', () => sentinel.run());
+  const higgsfieldUpdated = await runStep('Pixel (poll)', () => pixel.pollPendingJobs());
 
-  const summary = `Evening block complete. ${stageInfo.label}`;
+  const summary = `Evening block complete. ${stageInfo.label}${higgsfieldUpdated ? ` — ${higgsfieldUpdated} Higgsfield job(s) updated.` : ''}`;
   await logAgentRun('Atlas', 'evening', summary, { stage: stageInfo.stage });
   console.log(`[Atlas] ${summary}`);
 }

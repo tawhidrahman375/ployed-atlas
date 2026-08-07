@@ -1,7 +1,8 @@
 import { ask } from '../lib/claude.js';
+import { requireEnv } from '../lib/env.js';
+import { addLeadToCampaign } from '../lib/instantly.js';
 import { recall, logAgentRun } from '../mnemos.js';
 import { supabase } from '../lib/supabase.js';
-import { notWired } from '../lib/not-wired.js';
 
 const DAILY_LIMIT_PER_DOMAIN = 30;
 
@@ -10,10 +11,24 @@ interface EmailDraft {
   body: string;
 }
 
-async function pushToInstantly(_to: string, _draft: EmailDraft): Promise<void> {
-  // TODO: POST to the Instantly campaigns/leads API. Never exceed
-  // DAILY_LIMIT_PER_DOMAIN — domain reputation is everything.
-  notWired('Echo', 'Instantly push', 'INSTANTLY_API_KEY');
+interface Lead {
+  email: string;
+  name?: string;
+  niche?: string;
+}
+
+// Deliberately requires INSTANTLY_CAMPAIGN_ID, which isn't set anywhere by
+// default — an actual campaign has to exist in Instantly and be pointed at
+// on purpose before this can send a single real email. Adding a lead here
+// hands it to Instantly's own sequence timing; it isn't a synchronous send.
+async function pushToInstantly(lead: Lead, draft: EmailDraft): Promise<void> {
+  const campaignId = requireEnv('INSTANTLY_CAMPAIGN_ID');
+  await addLeadToCampaign(campaignId, {
+    email: lead.email,
+    firstName: lead.name?.split(' ')[0],
+    companyName: lead.niche,
+    personalization: `${draft.subject}\n\n${draft.body}`,
+  });
 }
 
 function parseDraft(raw: string): EmailDraft {
@@ -45,12 +60,12 @@ export async function run() {
     const draft = parseDraft(raw);
 
     try {
-      await pushToInstantly(lead.email, draft);
+      await pushToInstantly(lead, draft);
       await supabase.from('lead_queue').update({ status: 'emailed' }).eq('id', lead.id);
       sent += 1;
     } catch (err) {
       console.error((err as Error).message);
-      break; // Instantly isn't wired yet — stop rather than silently drop the rest of the batch
+      break; // no campaign configured (or Instantly call failed) — stop rather than silently drop the rest of the batch
     }
   }
 

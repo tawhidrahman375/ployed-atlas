@@ -6,47 +6,54 @@ This repo replaces the "OpenClaw" runtime referenced in the original spec with a
 
 ## What's real vs stubbed right now
 
-Everything below is wired end-to-end: Supabase reads/writes, Claude calls (model-switched per agent), the orchestration sequence, the Reddit RSS pull, the YouTube RSS "latest video" queue, and the dashboard.
+As of 2026-08-08, every agent except Apollo is real, tested code — not just plumbing. Confirmed working end-to-end with live credentials (not just typechecked): Nova (real YouTube transcripts → Claude extraction), Vega (real competitor page diffing + Reddit RSS), Pulse (real GSC/PostHog/Instantly pulls), Muse (real content uploaded to Supabase Storage with public URLs), Pixel (real Higgsfield video jobs via the CLI, fired and polled to completion), Sentinel (real Instantly bounce-rate check), Ledger (real Stripe MRR reads). Echo is real, working code too, but see the gate below.
 
-Anything that needs a paid API you haven't connected yet **fails loudly** with a clear error naming the missing env var, instead of silently doing nothing. Search the repo for `notWired(` to see every stub:
+Only **Apollo** (lead search) remains a stub — there's no LinkedIn/X/people-search API credential anywhere, and scraping LinkedIn directly isn't something to build. `lead_queue` stays empty until you pick a real source; everything downstream (Echo included) is harmless with an empty queue.
 
-| Agent | Stubbed until you add | Env var |
+Anything still missing a credential **fails loudly** with a clear error naming the missing env var, instead of silently doing nothing. Search the repo for `notWired(` — only Apollo uses it now.
+
+**Echo is deliberately gated.** `pushToInstantly()` is fully implemented (adds a lead to a real Instantly campaign via their API), but it requires `INSTANTLY_CAMPAIGN_ID`, which is *not* set anywhere by default. Nothing will send a real email until you've created an actual campaign in Instantly and chosen to set that variable yourself — that's an intentional extra step, not an oversight.
+
+| Agent | Status | Notes |
 |---|---|---|
-| Echo | Instantly push | `INSTANTLY_API_KEY` |
-| Pixel | Higgsfield generation | `HIGGSFIELD_API_KEY` |
-| Pulse | GSC pull | `GSC_CREDENTIALS_JSON` |
-| Pulse | PostHog pull | `POSTHOG_API_KEY` |
-| Pulse / Sentinel | Instantly stats/bounce rate | `INSTANTLY_API_KEY` |
-| Apollo | Lead search (LinkedIn/X) | none yet — needs a search source picked |
-| Vega | Competitor page scrape | none yet — needs scrape/diff logic |
-| Muse | Downloadable content | files save locally; need Supabase Storage upload for the dashboard's download links to work remotely |
-| Ledger | Stripe MRR | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` |
-| — | Product Hunt check | `PRODUCTHUNT_API_TOKEN` |
-
-Fill these in one at a time, in the build order below — don't rush to fill every key immediately.
+| Nova | ✅ real | YouTube transcript fetch via the `youtube-transcript` package (no auth needed), tested against all 6 monitored channels |
+| Vega | ✅ real | Competitor page fetch + text diff against last snapshot; Reddit RSS |
+| Pulse | ✅ real | GSC (service account JWT), PostHog (HogQL query API), Instantly campaign analytics |
+| Muse | ✅ real | Content uploaded to the public `atlas-content` Supabase Storage bucket, not local disk |
+| Pixel | ✅ real | Shells out to the authenticated `higgsfield` CLI (`generate create seedance_2_0`); evening block polls pending jobs to completion |
+| Sentinel | ✅ real | Instantly campaign analytics, 7-day bounce-rate window |
+| Ledger | ✅ real | Reads live MRR from Stripe (`sk_live_...` key); webhook *listener* still isn't deployed anywhere (see step 3) |
+| Echo | ✅ real, gated | Needs `INSTANTLY_CAMPAIGN_ID` set on purpose before it can send anything live |
+| Apollo | 🔲 stub | No lead-search source chosen yet — this is a decision, not an implementation gap |
 
 ## Build order
 
-1. **Supabase** — run `supabase/schema.sql` against your existing Ployed project.
-2. **Core env** — set `ANTHROPIC_API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` in `.env`. Run `npm install && npm run typecheck` to confirm it's wired.
-3. **Ledger + Stripe** — add `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET`, deploy `npm start` somewhere reachable, point a Stripe webhook at `https://<host>/webhooks/stripe`.
-4. **Pulse** — add `GSC_CREDENTIALS_JSON`, `POSTHOG_API_KEY`, implement the two `notWired` calls in `src/agents/pulse.ts`.
-5. **Apollo** — implement `findCandidates()` in `src/agents/apollo.ts` against whatever lead-search source you pick.
-6. **Echo** — add `INSTANTLY_API_KEY`, implement `pushToInstantly()` in `src/agents/echo.ts`.
-7. **Nova** — implement `fetchTranscript()` in `src/agents/nova.ts` (e.g. the `youtube-transcript` npm package). Fill in real channel IDs in `scripts/queue-youtube.ts`.
-8. **Vega** — implement `scrapeCompetitor()` in `src/agents/vega.ts`. Reddit RSS already works with no key.
-9. **Muse** — works today; wire Supabase Storage upload in `saveContent()` so the dashboard's download links work from your phone, not just the VPS filesystem.
-10. **Pixel** — add `HIGGSFIELD_API_KEY`/`COMPOSIO_API_KEY`, implement `fireHiggsfield()`.
-11. **Forge / Sentinel** — Forge's table plumbing works; call `proposeExperiment()` from wherever you want to start a test. Sentinel's bounce-rate check needs Instantly wired (step 6).
-12. **Deploy dashboard** — see below.
-13. **GitHub Actions** — see below.
+Status as of 2026-08-08:
+
+1. ✅ **Supabase** — schema live, RLS locked to read-only for `anon` on all 8 tables, plus a public `atlas-content` Storage bucket for generated files.
+2. ✅ **Core env** — `npm run morning` and `npm run evening` both run end-to-end for real. Two real bugs were caught and fixed while testing: `ask()` was silently returning empty strings for `claude-sonnet-5` because it only read `content[0]`, which is a `thinking` block when extended thinking is on, not the `text` block (`9a0fe16`); and on Windows, `execFile` can't spawn npm's `.cmd` shims without `shell: true`, which doesn't auto-quote multi-word arguments — Pixel's prompt was getting tokenized into dozens of stray positional args until it was quoted explicitly.
+3. 🟡 **Ledger + Stripe** — reads live MRR from Stripe for real (`sk_live_...` key). The webhook *listener* (`npm start`) still isn't deployed anywhere reachable, so `STRIPE_WEBHOOK_SECRET` sits unused for now — not blocking, since MRR reads don't need it.
+4. ✅ **Pulse** — GSC (service account JWT via `google-auth-library`), PostHog (HogQL query API), and Instantly campaign analytics all pulling real data into `dashboard_metrics`.
+5. 🔲 **Apollo** — still a stub. No lead-search credential exists; needs a decision on which source to use (Apollo.io, Proxycurl, a manual CSV import, etc.) before this can be implemented for real.
+6. ✅🔒 **Echo** — `pushToInstantly()` fully implemented against Instantly's real leads API. Gated behind `INSTANTLY_CAMPAIGN_ID`, which is intentionally unset — see the autonomy note at the bottom.
+7. ✅ **Nova** — real transcript fetch via the `youtube-transcript` package, tested against all 6 monitored channels end-to-end (queue → transcript → Claude extraction → memory).
+8. ✅ **Vega** — real page fetch + text-diff against the last snapshot in `competitor_intel` memory. Reddit RSS already worked with no key.
+9. ✅ **Muse** — content uploads to the public `atlas-content` Supabase Storage bucket and is publicly fetchable (verified with a real upload + fetch), not local disk. Daily reports (from Atlas) go through the same path now, so they show up in the dashboard's content list too.
+10. ✅ **Pixel** — shells out to the authenticated `higgsfield` CLI (`generate create seedance_2_0`, 9:16 aspect ratio). Verified with a real video generation (job fired, polled, completed, real `.mp4` URL returned). The evening block now calls `pixel.pollPendingJobs()` to catch up any jobs still processing from the morning.
+11. ✅ **Forge / Sentinel** — Forge's table plumbing works (nothing calling `proposeExperiment()` yet — that's a "when you want to run an experiment" trigger, not a startup task). Sentinel's bounce-rate check is real, reading 7 days of Instantly campaign analytics.
+12. ✅ **Deploy dashboard** — live at `https://dashboard-seven-lemon-91.vercel.app` (Vercel project `kicksnap/dashboard`), confirmed rendering real Supabase data.
+13. ✅ **GitHub Actions** — repo is public, and `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `GSC_CREDENTIALS_JSON`, `POSTHOG_API_KEY`, `PRODUCTHUNT_API_TOKEN` are all set as repo secrets. `morning-run.yml` runs for real at 09:00 UTC — every step now does real work except the Product Hunt check (still `notWired`, low priority).
+
+Legend: ✅ done · 🟡 partially done · 🔲 not started · 🔒 gated on purpose.
 
 ## Environment variables
 
 Copy `.env.example` to `.env` (runner) and `dashboard/.env.example` to `dashboard/.env.local` (dashboard), then fill in as you go through the build order above. Full list, grouped by system:
 
 **Runner (VPS) — `.env`:**
-`ANTHROPIC_API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `INSTANTLY_API_KEY`, `HIGGSFIELD_API_KEY`, `COMPOSIO_API_KEY`, `POSTHOG_API_KEY`, `POSTHOG_PROJECT_ID`, `GSC_SITE_URL`, `GSC_CREDENTIALS_JSON`, `PRODUCTHUNT_API_TOKEN`
+`ANTHROPIC_API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `INSTANTLY_API_KEY`, `INSTANTLY_CAMPAIGN_ID` (leave unset until you're ready for Echo to send real emails), `COMPOSIO_API_KEY`, `POSTHOG_API_KEY`, `POSTHOG_PROJECT_ID`, `GSC_SITE_URL`, `GSC_CREDENTIALS_JSON`, `PRODUCTHUNT_API_TOKEN`
+
+The `higgsfield` CLI handles its own auth separately (`higgsfield auth login`, stored under `~/.config/higgsfield/`) — there's no `HIGGSFIELD_API_KEY` env var to set.
 
 **GitHub Actions — repo secrets** (Settings → Secrets and variables → Actions):
 `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `GSC_CREDENTIALS_JSON`, `POSTHOG_API_KEY`, `PRODUCTHUNT_API_TOKEN`
@@ -74,23 +81,30 @@ npm start &            # or run under pm2/systemd so it survives reboots
 
 ## GitHub Actions setup
 
-1. Push this repo to a **public** GitHub repo (required for unlimited free Actions minutes).
-2. Add the repo secrets listed above.
+✅ **Already done:**
+1. Repo is public (`github.com/tawhidrahman375/ployed-atlas`) — unlimited free Actions minutes.
+2. Repo secrets are set: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `GSC_CREDENTIALS_JSON`, `POSTHOG_API_KEY`, `PRODUCTHUNT_API_TOKEN`.
 3. The workflow at `.github/workflows/morning-run.yml` runs daily at 09:00 UTC, or trigger it manually from the Actions tab (`workflow_dispatch`).
-4. Steps for unwired sources (`GSC`, `PostHog`, competitor scrape, Product Hunt) use `continue-on-error: true` so the run stays green while you fill those in — the YouTube queue and Reddit steps run for real already.
+4. Steps for still-stubbed agent code (`GSC`, `PostHog`, competitor scrape, Product Hunt) use `continue-on-error: true` so the run stays green — credentials are ready, but the run won't do anything real for those until the corresponding `notWired` calls are implemented (see build order above). The YouTube queue and Reddit steps run for real already.
 
 ## Deploying the dashboard
 
-```bash
-cd dashboard
-vercel link      # or connect the repo in the Vercel dashboard, root directory = dashboard/
-vercel env add NEXT_PUBLIC_SUPABASE_URL
-vercel env add NEXT_PUBLIC_SUPABASE_ANON_KEY
-vercel deploy --prod
-```
+✅ **Already deployed**, live at `https://dashboard-seven-lemon-91.vercel.app` (Vercel project `kicksnap/dashboard`, root directory `dashboard/`, `NEXT_PUBLIC_SUPABASE_URL`/`NEXT_PUBLIC_SUPABASE_ANON_KEY` set for Production).
 
 The page is a server component that revalidates every 5 minutes (`export const revalidate = 300`). No login — the private URL is the security boundary, so don't link to it publicly.
 
+To redeploy after changes:
+
+```bash
+cd dashboard
+vercel --prod
+```
+
 ## A note on autonomy
 
-Once Echo and Instantly are wired, `npm run morning` will send real cold emails to real people with no per-email confirmation. Test with a very small, known-safe lead list before trusting the full pipeline, and keep Sentinel's bounce-rate check wired before scaling volume.
+Echo's Instantly integration is real, working code today — the only thing stopping `npm run morning` from sending real cold emails is that `INSTANTLY_CAMPAIGN_ID` is unset, and Apollo (lead search) is still a stub so `lead_queue` stays empty regardless. Both of those are gates, not bugs. Before removing either one:
+
+1. Pick and implement a real lead-search source for Apollo (`src/agents/apollo.ts`).
+2. Create an actual campaign in Instantly, set `INSTANTLY_CAMPAIGN_ID` to its ID.
+3. Test with a very small, known-safe lead list first — once both gates are open, every `npm run morning` sends real emails to real people with no per-email confirmation.
+4. Keep Sentinel's bounce-rate check running (it's real and wired) before scaling volume.

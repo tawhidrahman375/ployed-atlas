@@ -1,26 +1,35 @@
-import { mkdir, writeFile } from 'node:fs/promises';
-import path from 'node:path';
 import { ask } from '../lib/claude.js';
 import { recall, logAgentRun } from '../mnemos.js';
 import { supabase } from '../lib/supabase.js';
 
-const OUTPUT_DIR = path.resolve('output', 'content');
+const BUCKET = 'atlas-content';
 
-// NOTE: files are saved locally on whichever machine runs this (the VPS).
-// The dashboard's download buttons need these uploaded to Supabase Storage
-// to be reachable from the phone/browser — that upload is not wired yet.
-// TODO: replace writeFile below with a supabase.storage.from(...).upload() call.
+// Uploaded to the public `atlas-content` Storage bucket (not local disk) so
+// the dashboard's download links work from the phone, not just the machine
+// that generated the file.
+function slugify(input: string): string {
+  return input
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60);
+}
+
 async function saveContent(type: string, title: string, body: string): Promise<string> {
-  await mkdir(OUTPUT_DIR, { recursive: true });
-  const filePath = path.join(OUTPUT_DIR, `${Date.now()}-${type}.md`);
-  await writeFile(filePath, `# ${title}\n\n${body}`, 'utf-8');
+  const objectPath = `${type}/${Date.now()}-${slugify(title)}.md`;
+  const { error: uploadError } = await supabase.storage
+    .from(BUCKET)
+    .upload(objectPath, `# ${title}\n\n${body}`, { contentType: 'text/markdown' });
+  if (uploadError) throw uploadError;
+
+  const { data: publicUrl } = supabase.storage.from(BUCKET).getPublicUrl(objectPath);
 
   const { error } = await supabase
     .from('content_queue')
-    .insert({ type, title, file_path: filePath, status: 'ready' });
+    .insert({ type, title, file_path: publicUrl.publicUrl, status: 'ready' });
   if (error) throw error;
 
-  return filePath;
+  return publicUrl.publicUrl;
 }
 
 export async function run() {

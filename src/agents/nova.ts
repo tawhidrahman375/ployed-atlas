@@ -1,6 +1,6 @@
+import { YoutubeTranscript } from 'youtube-transcript';
 import { ask } from '../lib/claude.js';
 import { recall, remember, logAgentRun } from '../mnemos.js';
-import { notWired } from '../lib/not-wired.js';
 
 interface QueuedVideo {
   videoId: string;
@@ -8,10 +8,12 @@ interface QueuedVideo {
   status: 'queued' | 'processed';
 }
 
+const MAX_TRANSCRIPT_CHARS = 12000; // caps input tokens for long videos
+
 async function fetchTranscript(videoId: string): Promise<string> {
-  // TODO: wire up e.g. the `youtube-transcript` npm package. No API key needed,
-  // just an implementation — GitHub Actions queues the videoIds overnight.
-  notWired('Nova', `transcript fetch for ${videoId}`, 'N/A — implement the fetch itself');
+  const segments = await YoutubeTranscript.fetchTranscript(videoId);
+  const full = segments.map((s) => s.text).join(' ');
+  return full.length > MAX_TRANSCRIPT_CHARS ? full.slice(0, MAX_TRANSCRIPT_CHARS) : full;
 }
 
 async function getQueuedVideos(): Promise<QueuedVideo[]> {

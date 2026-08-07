@@ -6,3 +6,8 @@ dist
 dashboard/.next
 dashboard/node_modules
 output/
+
+# Local Higgsfield CLI skill cache (not project source)
+.agents/
+.claude/
+skills-lock.json
