@@ -1,6 +1,7 @@
 import { ask } from '../lib/claude.js';
 import { recall, logAgentRun } from '../mnemos.js';
 import { supabase } from '../lib/supabase.js';
+import { publishSeoPage } from '../lib/seoPublish.js';
 
 const BUCKET = 'atlas-content';
 
@@ -58,9 +59,12 @@ export async function run() {
       4096 // 800-1500 words plus thinking overhead needs more than the 2048 default
     );
     seoPages.push(await saveContent('seo_page', keyword, page));
+    // Same-day, no manual step: goes live at ployed.net/resources/<slug>
+    // right after Muse finishes writing it.
+    await publishSeoPage(keyword, page);
   }
 
-  await logAgentRun('Muse', 'morning', `Produced 1 LinkedIn post, 1 X thread, ${seoPages.length} SEO pages.`, {
+  await logAgentRun('Muse', 'morning', `Produced 1 LinkedIn post, 1 X thread, ${seoPages.length} SEO pages (published live).`, {
     seoPages: seoPages.length,
   });
 
