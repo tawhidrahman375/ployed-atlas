@@ -150,10 +150,10 @@ vercel --prod
 
 ## A note on autonomy
 
-Echo's Instantly integration is real, working code today — the only thing stopping `npm run morning` from sending real cold emails is that `INSTANTLY_CAMPAIGN_ID` is unset. Apollo now finds real leads (verified: 56 in one run) and enriches up to 5/run with real emails via Hunter.io (verified live). Before removing the campaign gate:
+**Status: both gates are now open, except Instantly's own campaign-launch gate.**
 
-1. Apollo is already finding real, relevant candidates and attaching real emails where Hunter has them — nothing to do here.
-2. Most of the actual ICP (small, newer agency founders) won't be in Hunter's database yet, so expect most leads to still lack an email and need manual outreach — that's Hunter's data coverage, not a bug.
-3. Create an actual campaign in Instantly, set `INSTANTLY_CAMPAIGN_ID` to its ID.
-4. Test with a very small, known-safe lead list first — once all of the above are in place, every `npm run morning` sends real emails to real people with no per-email confirmation. This now runs on a schedule (crontab, 08:00 daily) on the live VPS, so "in place" means it fires automatically, not just when you happen to run it by hand.
-5. Keep Sentinel's bounce-rate check running (it's real and wired) before scaling volume.
+- `INSTANTLY_CAMPAIGN_ID` is set (`cfac9833-addf-4a2d-a994-d1293c7ea67f`, "My Campaign") — set both locally and on the VPS, and verified with a real API call that actually added a lead to it.
+- **Real, important finding on Hunter.io coverage**: in live testing, 0 of 10 real Apollo-sourced leads (small, newer agency founders — the actual ICP) had a match in Hunter's database. The only successful match in testing was a very well-known, well-indexed person (Reid Hoffman) used purely to confirm the code path works. In practice, expect Apollo to keep finding good leads but Hunter to enrich very few of them with an email — most will need the manual X DM / LinkedIn comment path (not built yet) rather than ending up in Echo's queue at all. This is a real data-coverage limitation, not a bug to fix.
+- **The one gate left is entirely manual and outside this codebase**: the Instantly campaign is in **Draft** status. Instantly won't send anything — even with leads already added to it via the API — until you click "Resume campaign" (or equivalent) in their dashboard. That's the actual safety checkpoint now. Once you launch it, any lead Echo successfully enriches with an email will get a real cold email sent on the next scheduled `npm run morning` (08:00 daily on the VPS), with no further per-email confirmation.
+
+Before launching the campaign for real: test with a small, known-safe list first, and keep Sentinel's bounce-rate check running (it's real and wired) before scaling volume.
