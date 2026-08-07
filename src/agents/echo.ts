@@ -37,7 +37,29 @@ function parseDraft(raw: string): EmailDraft {
   return { subject, body };
 }
 
+// Sentinel writes red flags tagged agent: 'Echo' when bounce rate crosses
+// the danger threshold, but writing a flag doesn't stop anything by itself
+// — this is the actual enforcement. There's no UI yet to mark a flag
+// resolved; do it directly in Supabase (risk_flags.resolved = true) once
+// the underlying issue is actually fixed.
+async function hasUnresolvedRedFlag(): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('risk_flags')
+    .select('id')
+    .eq('agent', 'Echo')
+    .eq('level', 'red')
+    .eq('resolved', false)
+    .limit(1);
+  if (error) throw error;
+  return (data?.length ?? 0) > 0;
+}
+
 export async function run() {
+  if (await hasUnresolvedRedFlag()) {
+    await logAgentRun('Echo', 'morning', 'Skipped — unresolved red risk flag (bounce rate).');
+    return 0;
+  }
+
   const [wins, failures] = await Promise.all([
     recall('outreach_wins', 20),
     recall('outreach_failures', 20),
