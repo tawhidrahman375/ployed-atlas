@@ -1,36 +1,108 @@
+import { ask } from '../lib/claude.js';
+import { customSearch } from '../lib/brave-search.js';
 import { recall, remember, logAgentRun } from '../mnemos.js';
 import { supabase } from '../lib/supabase.js';
-import { notWired } from '../lib/not-wired.js';
 
 interface Candidate {
   name: string;
   handle: string;
-  platform: string;
+  platform: 'linkedin' | 'x';
   niche: string;
   signals: string;
-  email?: string;
 }
 
-async function findCandidates(): Promise<Candidate[]> {
-  // TODO: wire up a real search (e.g. a LinkedIn/X search API, or import a
-  // manually exported list). Qualification signals to look for: active
-  // online presence, under 5k followers, prospecting/lead-gen content,
-  // no obvious product of their own.
-  notWired('Apollo', 'lead search', 'N/A — implement a search source');
+// ICP priority order from the spec: AI automation agencies first, then GHL,
+// web design, SMMA. One query per (niche x platform) — 8 total, well inside
+// the 100/day free-tier cap even run twice.
+const SEARCHES: { niche: string; platform: 'linkedin' | 'x'; query: string }[] = [
+  {
+    niche: 'AI automation agency',
+    platform: 'linkedin',
+    query: 'site:linkedin.com/in "AI automation agency" (founder OR owner OR "co-founder")',
+  },
+  {
+    niche: 'GHL agency',
+    platform: 'linkedin',
+    query: 'site:linkedin.com/in "GoHighLevel agency" (founder OR owner)',
+  },
+  {
+    niche: 'web design agency',
+    platform: 'linkedin',
+    query: 'site:linkedin.com/in "web design agency" (founder OR owner)',
+  },
+  {
+    niche: 'SMMA',
+    platform: 'linkedin',
+    query: 'site:linkedin.com/in SMMA (founder OR owner) clients',
+  },
+  {
+    niche: 'AI automation agency',
+    platform: 'x',
+    query: 'site:x.com "AI automation agency" (founder OR owner)',
+  },
+  { niche: 'GHL agency', platform: 'x', query: 'site:x.com "GoHighLevel agency"' },
+  { niche: 'web design agency', platform: 'x', query: 'site:x.com "web design agency" founder' },
+  { niche: 'SMMA', platform: 'x', query: 'site:x.com SMMA founder' },
+];
+
+function extractJsonArray(text: string): unknown[] {
+  const start = text.indexOf('[');
+  const end = text.lastIndexOf(']');
+  if (start === -1 || end === -1 || end < start) {
+    throw new Error('No JSON array found in response');
+  }
+  return JSON.parse(text.slice(start, end + 1)) as unknown[];
+}
+
+async function findCandidates(seenHandles: Set<string>): Promise<Candidate[]> {
+  const candidates: Candidate[] = [];
+
+  for (const search of SEARCHES) {
+    const results = await customSearch(search.query).catch((err: Error) => {
+      console.error(`[Apollo] search failed for "${search.query}":`, err.message);
+      return [];
+    });
+    if (!results.length) continue;
+
+    const raw = await ask(
+      'bulk',
+      `You are Apollo, Ployed's lead-finding agent. Ployed sells prospecting/lead-gen software to AI automation agencies, GHL agencies, web design agencies, and SMMA operators — especially ones with fewer than 5 clients, since they need it most. From these ${search.platform === 'linkedin' ? 'LinkedIn' : 'X'} search results, extract real individual people (not companies, not job listings, not news articles) who plausibly run or co-found a ${search.niche}. Respond with a JSON array only, no prose, no markdown fences. Each item: {"name": string, "handle": string (the profile URL), "signals": string (one line on why they fit)}. Skip anything that isn't clearly a person's own profile.`,
+      JSON.stringify(results)
+    );
+
+    try {
+      const parsed = extractJsonArray(raw) as { name: string; handle: string; signals: string }[];
+      for (const c of parsed) {
+        if (c.handle && c.name && !seenHandles.has(c.handle)) {
+          candidates.push({ name: c.name, handle: c.handle, signals: c.signals, platform: search.platform, niche: search.niche });
+          seenHandles.add(c.handle);
+        }
+      }
+    } catch (err) {
+      console.error(`[Apollo] failed to parse extraction for "${search.query}":`, (err as Error).message);
+    }
+  }
+
+  return candidates;
 }
 
 export async function run() {
-  await recall('icp_profiles', 20); // load before searching so future passes can use it for targeting
+  await recall('icp_profiles', 20); // TODO: use past conversion data to weight/reorder SEARCHES
 
-  const candidates = await findCandidates().catch((err: Error) => {
+  const { data: existing } = await supabase.from('lead_queue').select('handle');
+  const seenHandles = new Set((existing ?? []).map((r) => r.handle).filter((h): h is string => Boolean(h)));
+
+  const candidates = await findCandidates(seenHandles).catch((err: Error) => {
     console.error(err.message);
     return [] as Candidate[];
   });
 
   if (candidates.length) {
-    const { error } = await supabase
-      .from('lead_queue')
-      .insert(candidates.map((c) => ({ ...c, status: 'queued' })));
+    // No email field: LinkedIn/X search snippets don't expose email
+    // addresses. These leads are real profiles, ready for X DM / LinkedIn
+    // comment drafts — Echo's Instantly path only acts on leads that do
+    // have an email, so these sit queued for manual outreach for now.
+    const { error } = await supabase.from('lead_queue').insert(candidates.map((c) => ({ ...c, status: 'queued' })));
     if (error) throw error;
   }
 

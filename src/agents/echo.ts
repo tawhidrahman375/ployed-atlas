@@ -43,10 +43,14 @@ export async function run() {
     recall('outreach_failures', 20),
   ]);
 
+  // Apollo's Google Custom Search source can't recover email addresses from
+  // LinkedIn/X search snippets, so most queued leads won't have one — those
+  // are for manual X DM / LinkedIn comment outreach, not this path.
   const { data: leads, error } = await supabase
     .from('lead_queue')
     .select('*')
     .eq('status', 'queued')
+    .not('email', 'is', null)
     .limit(DAILY_LIMIT_PER_DOMAIN);
   if (error) throw error;
 
