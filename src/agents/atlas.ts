@@ -71,15 +71,18 @@ async function morningBlock(): Promise<void> {
   const stageInfo = await getStage();
   console.log(`[Atlas] ${stageInfo.label}`);
 
-  // Round 1 — research, in parallel.
-  const [bestInsight] = await Promise.all([
-    runStep('Nova', () => nova.run()),
-    runStep('Pulse', () => pulse.run()),
-  ]);
+  // Round 1 — research.
+  const bestInsight = await runStep('Nova', () => nova.run());
 
   // Round 2 — outreach. Sequential: Echo reads the queue Apollo just filled.
   const leadsFound = await runStep('Apollo', () => apollo.run());
   const emailsSent = await runStep('Echo', () => echo.run());
+
+  // Pulse reads lead_queue/Instantly counts for "today" — must run after
+  // Apollo/Echo have done today's work, not in parallel with Nova beforehand,
+  // or leads_found_today/emails_sent_today always read as 0 (queried before
+  // today's rows existed).
+  await runStep('Pulse', () => pulse.run());
 
   // Round 3 — content. Sequential: Pixel uses Nova's best insight.
   const museOutput = await runStep('Muse', () => muse.run());
