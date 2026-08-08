@@ -6,7 +6,9 @@ This repo replaces the "OpenClaw" runtime referenced in the original spec with a
 
 ## What's real vs stubbed right now
 
-As of 2026-08-08, every agent is real, tested code — not just plumbing. Confirmed working end-to-end with live credentials (not just typechecked): Nova (real YouTube transcripts → Claude extraction), Vega (real competitor page diffing + Reddit RSS), Pulse (real GSC/PostHog/Instantly pulls), Muse (real content uploaded to Supabase Storage with public URLs), Pixel (real Higgsfield video jobs via the CLI, fired and polled to completion), Sentinel (real Instantly bounce-rate check), Ledger (real Stripe MRR reads). Echo is real, working code too, but see the gate below.
+As of 2026-08-08, every agent is real, tested code — not just plumbing. Confirmed working end-to-end with live credentials (not just typechecked): Nova (real YouTube transcripts → Claude extraction), Vega (real competitor page diffing + Reddit RSS), Pulse (real GSC/PostHog/Instantly pulls), Muse (real content uploaded to Supabase Storage with public URLs), Sentinel (real Instantly bounce-rate check), Ledger (real Stripe MRR reads). Echo is real, working code too, but see the gate below.
+
+**2026-08-08: Pixel switched from AI UGC video (Higgsfield) to TikTok slideshows.** Two alternating formats — "tools list" (real tools the ICP already trusts, Ployed revealed last) and "pain hook" (concrete pains, then Ployed as the payoff) — rendered as 6 real 1080×1920 PNGs plus a caption+hashtags file per run, via `satori` + `@resvg/resvg-js` + `sharp` (Inter font, white text, matching a reference folder of real TikTok slideshow screenshots). Backgrounds are real Pexels stock photography for every slide, never AI-generated. **Verified live end-to-end** with a real `PEXELS_API_KEY` (real Claude copy, real Pexels photos, real Supabase upload + `slideshows` row, test data cleaned up after).
 
 **Apollo** finds leads via the Brave Search API — 8 targeted `site:linkedin.com/in` / `site:x.com` searches across the ICP (AI automation agencies, GHL agencies, web design agencies, SMMA operators), with Claude extracting real individual profiles from the results and deduping against everything already in `lead_queue`. Google Custom Search was the original plan, but the Google Cloud org this account sits under blocks plain API key creation via a default security policy that couldn't be safely overridden — Brave was the pragmatic swap (note: Brave dropped its free tier in early 2026; it's a card-on-file, $5/month-credit plan now, though Apollo's ~240 queries/month stays well inside that). **Confirmed working live**: one real run found 56 genuine, well-qualified candidates (real founders/owners, specific per-lead signals, zero duplicates, zero garbage).
 
@@ -26,7 +28,7 @@ Every agent is now real, tested code — nothing in the repo uses `notWired(` an
 | Vega | ✅ real | Competitor page fetch + text diff against last snapshot; Reddit RSS |
 | Pulse | ✅ real | GSC (service account JWT), PostHog (HogQL query API), Instantly campaign analytics |
 | Muse | ✅ real | Content uploaded to the public `atlas-content` Supabase Storage bucket, not local disk |
-| Pixel | ✅ real | Shells out to the authenticated `higgsfield` CLI (`generate create seedance_2_0`); evening block polls pending jobs to completion |
+| Pixel | ✅ real | Renders 6 real TikTok slideshow PNGs (satori + resvg + sharp, real Pexels photos, no AI-generated imagery) + a caption file per run; verified live |
 | Sentinel | ✅ real | Instantly campaign analytics, 7-day bounce-rate window, **and actually enforced**: Echo checks for an unresolved red flag tagged `agent: 'Echo'` before sending anything, verified live to correctly block |
 | Ledger | ✅ real | Reads live MRR from Stripe (`sk_live_...` key); webhook *listener* still isn't deployed anywhere (see step 3) |
 | Echo | ✅ real, gated | Needs `INSTANTLY_CAMPAIGN_ID` set on purpose before it can send anything live |
@@ -46,11 +48,11 @@ Status as of 2026-08-08:
 7. ✅ **Nova** — real transcript fetch via the `youtube-transcript` package, tested against all 6 monitored channels end-to-end (queue → transcript → Claude extraction → memory).
 8. ✅ **Vega** — real page fetch + text-diff against the last snapshot in `competitor_intel` memory. Reddit RSS already worked with no key.
 9. ✅ **Muse** — content uploads to the public `atlas-content` Supabase Storage bucket and is publicly fetchable (verified with a real upload + fetch), not local disk. Daily reports (from Atlas) go through the same path now, so they show up in the dashboard's content list too.
-10. ✅ **Pixel** — shells out to the authenticated `higgsfield` CLI (`generate create seedance_2_0`, 9:16 aspect ratio). Verified with a real video generation (job fired, polled, completed, real `.mp4` URL returned). The evening block now calls `pixel.pollPendingJobs()` to catch up any jobs still processing from the morning.
+10. ✅ **Pixel** — produces two alternating TikTok slideshow formats (tools list / pain hook), 6 real 1080×1920 PNGs + a caption file per run, rendered locally via `satori` + `@resvg/resvg-js` + `sharp` (no AI-generated imagery — every background is a real Pexels stock photo). Generation is synchronous within the morning run now, so there's nothing for the evening block to poll. **Verified with a real end-to-end run** (real Claude copy, real Pexels photos, real Supabase upload + `slideshows` row, test data cleaned up after).
 11. ✅ **Forge / Sentinel** — Forge's table plumbing works (nothing calling `proposeExperiment()` yet — that's a "when you want to run an experiment" trigger, not a startup task). Sentinel's bounce-rate check is real, reading 7 days of Instantly campaign analytics — and now actually enforced: Echo refuses to send if an unresolved red flag tagged `agent: 'Echo'` exists, verified live (planted a real flag, confirmed Echo sent 0, removed it). There's no UI yet to mark a flag resolved once the underlying issue is fixed — do it directly in Supabase (`risk_flags.resolved = true`).
 12. ✅ **Deploy dashboard** — live at `https://dashboard-seven-lemon-91.vercel.app` (Vercel project `kicksnap/dashboard`), confirmed rendering real Supabase data.
 13. ✅ **GitHub Actions** — repo is public, and `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `GSC_CREDENTIALS_JSON`, `POSTHOG_API_KEY`, `PRODUCTHUNT_API_TOKEN` are all set as repo secrets. `morning-run.yml` runs for real at 09:00 UTC — every step now does real work except the Product Hunt check (still `notWired`, low priority).
-14. ✅ **VPS deployment** — live on Ubuntu 26.04 at `94.237.57.75` (root, key-based SSH only). Node 22 + repo cloned + `.env` copied over. Ledger's webhook listener runs as a systemd service (`ployed-atlas.service`, auto-restarts, survives reboot). `crontab` runs `npm run morning` at 08:00 and `npm run evening` at 20:00 daily. UFW firewall enabled (was off entirely before) — only SSH (22) and the webhook port (8787) open. The `higgsfield` CLI's local credentials were copied over too (`~/.config/higgsfield/`), so Pixel works there without redoing OAuth on a headless box. Verified with a real `npm run morning` run on the VPS itself (exit 0, ~9 min on this 1 CPU/1GB box) — dedup correctly found only 1 new lead against the 56 already in `lead_queue` from earlier local testing.
+14. ✅ **VPS deployment** — live on Ubuntu 26.04 at `94.237.57.75` (root, key-based SSH only). Node 22 + repo cloned + `.env` copied over. Ledger's webhook listener runs as a systemd service (`ployed-atlas.service`, auto-restarts, survives reboot). `crontab` runs `npm run morning` at 08:00 and `npm run evening` at 20:00 daily. UFW firewall enabled (was off entirely before) — only SSH (22) and the webhook port (8787) open. Verified with a real `npm run morning` run on the VPS itself (exit 0, ~9 min on this 1 CPU/1GB box) — dedup correctly found only 1 new lead against the 56 already in `lead_queue` from earlier local testing. Since switching Pixel to slideshows (see the note at the top), the VPS still needs `PEXELS_API_KEY` set before a real `npm run morning` there will produce a slideshow.
 
 Legend: ✅ done · 🟡 partially done · 🔲 not started · 🔒 gated on purpose.
 
@@ -59,9 +61,7 @@ Legend: ✅ done · 🟡 partially done · 🔲 not started · 🔒 gated on pur
 Copy `.env.example` to `.env` (runner) and `dashboard/.env.example` to `dashboard/.env.local` (dashboard), then fill in as you go through the build order above. Full list, grouped by system:
 
 **Runner (VPS) — `.env`:**
-`ANTHROPIC_API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `BRAVE_SEARCH_API_KEY`, `ANYMAIL_FINDER_API_KEY`, `INSTANTLY_API_KEY`, `INSTANTLY_CAMPAIGN_ID` (leave unset until you're ready for Echo to send real emails), `COMPOSIO_API_KEY`, `POSTHOG_API_KEY`, `POSTHOG_PROJECT_ID`, `GSC_SITE_URL`, `GSC_CREDENTIALS_JSON`, `PRODUCTHUNT_API_TOKEN`
-
-The `higgsfield` CLI handles its own auth separately (`higgsfield auth login`, stored under `~/.config/higgsfield/`) — there's no `HIGGSFIELD_API_KEY` env var to set.
+`ANTHROPIC_API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `BRAVE_SEARCH_API_KEY`, `ANYMAIL_FINDER_API_KEY`, `INSTANTLY_API_KEY`, `INSTANTLY_CAMPAIGN_ID` (leave unset until you're ready for Echo to send real emails), `PEXELS_API_KEY`, `COMPOSIO_API_KEY`, `POSTHOG_API_KEY`, `POSTHOG_PROJECT_ID`, `GSC_SITE_URL`, `GSC_CREDENTIALS_JSON`, `PRODUCTHUNT_API_TOKEN`
 
 **GitHub Actions — repo secrets** (Settings → Secrets and variables → Actions):
 `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `GSC_CREDENTIALS_JSON`, `POSTHOG_API_KEY`, `PRODUCTHUNT_API_TOKEN`
@@ -83,11 +83,6 @@ git clone https://github.com/tawhidrahman375/ployed-atlas.git ~/ployed-atlas
 cd ~/ployed-atlas && npm install
 # .env copied over via scp — see Environment variables above for the full list
 npm run typecheck
-
-# higgsfield CLI, reusing the already-authenticated local credentials
-# rather than redoing OAuth on a headless box:
-npm install -g @higgsfield/cli
-# scp ~/.config/higgsfield/{config.json,credentials.json} to the same path on the VPS
 ```
 
 **Always-on webhook listener** — runs as a systemd service, not a bare `npm start &`, so it survives crashes and reboots:

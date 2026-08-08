@@ -253,8 +253,14 @@ export function ReplyIcon(props: IconProps) {
   );
 }
 
-export function FilmIcon(props: IconProps) {
-  return <PixelIcon {...props} />;
+export function ImagesIcon(props: IconProps) {
+  return (
+    <Base {...props}>
+      <rect x="3" y="3" width="13" height="13" rx="2" />
+      <path d="M3 12.5l3.5-3.5 3 3 2-2 4.5 4.5" />
+      <path d="M8 20.5h10a2 2 0 0 0 2-2v-10" />
+    </Base>
+  );
 }
 
 export function ActivityIcon(props: IconProps) {

@@ -85,7 +85,9 @@ create table if not exists experiments (
   completed_at timestamptz
 );
 
--- Higgsfield jobs — Pixel writes, dashboard reads.
+-- Higgsfield jobs — historical only, Pixel no longer writes here (see
+-- `slideshows` below). Left in place rather than dropped so past runs
+-- aren't lost.
 create table if not exists higgsfield_jobs (
   id uuid primary key default gen_random_uuid(),
   job_id text,
@@ -93,6 +95,22 @@ create table if not exists higgsfield_jobs (
   script text,
   status text not null default 'processing' check (status in ('processing', 'complete', 'failed')),
   output_url text,
+  created_at timestamptz not null default now()
+);
+
+-- Slideshows — Pixel writes, dashboard reads. One row per TikTok slideshow
+-- (6 slide images + a caption file), alternating between the two formats.
+create table if not exists slideshows (
+  id uuid primary key default gen_random_uuid(),
+  format text not null check (format in ('tools_list', 'pain_hook')),
+  hook text,
+  slide_urls text[] not null default '{}',
+  caption text,
+  hashtags text,
+  caption_url text, -- downloadable .txt with caption + hashtags
+  photo_ids text[] not null default '{}', -- Pexels photo IDs used, for background dedup
+  tools_used text[] not null default '{}', -- tools_list format only, for tool-choice dedup
+  status text not null default 'ready' check (status in ('ready', 'failed')),
   created_at timestamptz not null default now()
 );
 
@@ -107,6 +125,7 @@ alter table dashboard_metrics enable row level security;
 alter table risk_flags enable row level security;
 alter table experiments enable row level security;
 alter table higgsfield_jobs enable row level security;
+alter table slideshows enable row level security;
 
 do $$
 begin
@@ -133,5 +152,8 @@ begin
   end if;
   if not exists (select 1 from pg_policies where tablename = 'higgsfield_jobs' and policyname = 'anon read higgsfield_jobs') then
     create policy "anon read higgsfield_jobs" on higgsfield_jobs for select to anon using (true);
+  end if;
+  if not exists (select 1 from pg_policies where tablename = 'slideshows' and policyname = 'anon read slideshows') then
+    create policy "anon read slideshows" on slideshows for select to anon using (true);
   end if;
 end $$;

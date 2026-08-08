@@ -7,14 +7,14 @@ import StatGrid from '../components/StatGrid';
 import LeadFunnel from '../components/LeadFunnel';
 import RiskFlags from '../components/RiskFlags';
 import ContentFeed from '../components/ContentFeed';
-import JobsGrid from '../components/JobsGrid';
+import SlideshowGrid from '../components/SlideshowGrid';
 import ExperimentsList from '../components/ExperimentsList';
 import ActivityTimeline from '../components/ActivityTimeline';
 import {
   AlertTriangleIcon,
   ClockIcon,
   FileTextIcon,
-  FilmIcon,
+  ImagesIcon,
   FlaskIcon,
   SearchIcon,
   TrendingUpIcon,
@@ -27,13 +27,13 @@ function metricMap(rows: { metric_name: string; metric_value: string | null }[] 
 }
 
 export default async function Page() {
-  const [{ data: metricsRows }, { data: logs }, { data: risks }, { data: content }, { data: jobs }, { data: experiments }, { data: leadStatuses }, { data: memoryRows }] =
+  const [{ data: metricsRows }, { data: logs }, { data: risks }, { data: content }, { data: slideshows }, { data: experiments }, { data: leadStatuses }, { data: memoryRows }] =
     await Promise.all([
       supabase.from('dashboard_metrics').select('metric_name, metric_value'),
       supabase.from('agent_logs').select('id, agent, session_type, summary, created_at').order('created_at', { ascending: false }).limit(300),
       supabase.from('risk_flags').select('*').eq('resolved', false).order('created_at', { ascending: false }),
       supabase.from('content_queue').select('*').eq('status', 'ready').order('created_at', { ascending: false }).limit(150),
-      supabase.from('higgsfield_jobs').select('*').order('created_at', { ascending: false }).limit(9),
+      supabase.from('slideshows').select('*').order('created_at', { ascending: false }).limit(9),
       supabase.from('experiments').select('*').order('started_at', { ascending: false }).limit(20),
       supabase.from('lead_queue').select('status').limit(5000),
       supabase.from('agent_memory').select('category').limit(5000),
@@ -153,12 +153,12 @@ export default async function Page() {
         <div className="section-head">
           <div className="section-title-group">
             <span className="section-icon">
-              <FilmIcon size={15} />
+              <ImagesIcon size={15} />
             </span>
-            <h3 className="section-title">Higgsfield jobs</h3>
+            <h3 className="section-title">Slideshows</h3>
           </div>
         </div>
-        <JobsGrid jobs={jobs ?? []} />
+        <SlideshowGrid slideshows={slideshows ?? []} />
       </section>
 
       <section className="section">

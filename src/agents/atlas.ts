@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase.js';
 import { logAgentRun } from '../mnemos.js';
+import { revalidateDashboard } from '../lib/revalidate.js';
 import * as nova from './nova.js';
 import * as apollo from './apollo.js';
 import * as echo from './echo.js';
@@ -84,9 +85,9 @@ async function morningBlock(): Promise<void> {
   // today's rows existed).
   await runStep('Pulse', () => pulse.run());
 
-  // Round 3 — content. Sequential: Pixel uses Nova's best insight.
+  // Round 3 — content.
   const museOutput = await runStep('Muse', () => muse.run());
-  const pixelJob = await runStep('Pixel', () => pixel.run(bestInsight));
+  const slideshowHook = await runStep('Pixel', () => pixel.run());
 
   // Round 4 — report.
   const experiments = await runStep('Forge', () => forge.run());
@@ -108,7 +109,7 @@ async function morningBlock(): Promise<void> {
     museOutput
       ? `LinkedIn post, X thread, and ${museOutput.seoPages.length} SEO pages produced.`
       : 'Muse did not complete this run.',
-    pixelJob ? `Higgsfield job fired: ${pixelJob}` : 'No Higgsfield job fired.',
+    slideshowHook ? `Slideshow produced: "${slideshowHook}"` : 'No slideshow produced.',
     '',
     '## Experiments',
     `${experiments?.length ?? 0} currently running.`,
@@ -117,6 +118,7 @@ async function morningBlock(): Promise<void> {
   const reportUrl = await saveReport(`Morning Report ${new Date().toISOString().slice(0, 10)}`, report);
 
   await logAgentRun('Atlas', 'morning', 'Morning block complete.', { stage: stageInfo.stage, reportUrl });
+  await runStep('Dashboard revalidate', () => revalidateDashboard());
   console.log(report);
 }
 
@@ -125,10 +127,10 @@ async function eveningBlock(): Promise<void> {
 
   await runStep('Pulse', () => pulse.run());
   await runStep('Sentinel', () => sentinel.run());
-  const higgsfieldUpdated = await runStep('Pixel (poll)', () => pixel.pollPendingJobs());
 
-  const summary = `Evening block complete. ${stageInfo.label}${higgsfieldUpdated ? ` — ${higgsfieldUpdated} Higgsfield job(s) updated.` : ''}`;
+  const summary = `Evening block complete. ${stageInfo.label}`;
   await logAgentRun('Atlas', 'evening', summary, { stage: stageInfo.stage });
+  await runStep('Dashboard revalidate', () => revalidateDashboard());
   console.log(`[Atlas] ${summary}`);
 }
 
