@@ -2,9 +2,7 @@ import { requireEnv } from './env.js';
 
 const BASE_URL = 'https://api.instantly.ai/api/v2';
 
-export interface CampaignAnalytics {
-  campaign_id: string;
-  campaign_name: string;
+export interface CampaignAnalyticsOverview {
   emails_sent_count: number;
   bounced_count: number;
   reply_count: number;
@@ -23,8 +21,14 @@ async function instantlyFetch<T>(path: string, params?: Record<string, string>):
   return res.json() as Promise<T>;
 }
 
-export async function getCampaignAnalytics(startDate?: string, endDate?: string): Promise<CampaignAnalytics[]> {
-  return instantlyFetch<CampaignAnalytics[]>('/campaigns/analytics', {
+// /campaigns/analytics (the list endpoint) returns `[]` on this account
+// regardless of params — confirmed live, not just a docs gap — so Pulse's
+// and Sentinel's numbers were silently always zero. /campaigns/analytics/overview
+// returns the same fields as a single object, populated even at zero volume,
+// and takes the same campaign_id/date-range scoping.
+export async function getCampaignAnalytics(startDate?: string, endDate?: string): Promise<CampaignAnalyticsOverview> {
+  return instantlyFetch<CampaignAnalyticsOverview>('/campaigns/analytics/overview', {
+    campaign_id: requireEnv('INSTANTLY_CAMPAIGN_ID'),
     ...(startDate ? { start_date: startDate } : {}),
     ...(endDate ? { end_date: endDate } : {}),
   });

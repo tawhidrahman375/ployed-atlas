@@ -44,15 +44,8 @@ async function pullPostHog(): Promise<{ eventsToday: number }> {
 
 async function pullInstantlyStats(): Promise<{ sent: number; bounced: number; replies: number }> {
   const today = new Date().toISOString().slice(0, 10);
-  const analytics = await getCampaignAnalytics(today, today);
-  return analytics.reduce(
-    (acc, c) => ({
-      sent: acc.sent + (c.emails_sent_count ?? 0),
-      bounced: acc.bounced + (c.bounced_count ?? 0),
-      replies: acc.replies + (c.reply_count ?? 0),
-    }),
-    { sent: 0, bounced: 0, replies: 0 }
-  );
+  const overview = await getCampaignAnalytics(today, today);
+  return { sent: overview.emails_sent_count, bounced: overview.bounced_count, replies: overview.reply_count };
 }
 
 async function setMetric(name: string, value: string | number): Promise<void> {

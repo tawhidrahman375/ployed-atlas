@@ -9,17 +9,9 @@ const LOOKBACK_DAYS = 7; // a single day's ratio is too noisy at low volume
 async function getInstantlyBounceRate(): Promise<number> {
   const end = new Date();
   const start = new Date(end.getTime() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
-  const analytics = await getCampaignAnalytics(start.toISOString().slice(0, 10), end.toISOString().slice(0, 10));
+  const overview = await getCampaignAnalytics(start.toISOString().slice(0, 10), end.toISOString().slice(0, 10));
 
-  const totals = analytics.reduce(
-    (acc, c) => ({
-      sent: acc.sent + (c.emails_sent_count ?? 0),
-      bounced: acc.bounced + (c.bounced_count ?? 0),
-    }),
-    { sent: 0, bounced: 0 }
-  );
-
-  return totals.sent > 0 ? totals.bounced / totals.sent : 0;
+  return overview.emails_sent_count > 0 ? overview.bounced_count / overview.emails_sent_count : 0;
 }
 
 async function flag(level: 'green' | 'yellow' | 'red', agent: string, message: string): Promise<void> {
