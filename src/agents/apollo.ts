@@ -1,11 +1,12 @@
 import { ask } from '../lib/claude.js';
 import { customSearch } from '../lib/brave-search.js';
-import { findEmailByLinkedIn } from '../lib/hunter.js';
+import { findEmailByLinkedIn } from '../lib/anymailFinder.js';
 import { recall, remember, logAgentRun } from '../mnemos.js';
 import { supabase } from '../lib/supabase.js';
 
-// Hunter's free tier is 25 searches/month total — capping per run spreads
-// that across many days instead of one run burning the whole month.
+// Anymail Finder only charges a credit on a genuine find, so this cap isn't
+// about rationing a monthly quota — it's a sanity ceiling on live SMTP-verify
+// calls (each one takes real seconds) per run.
 const MAX_ENRICHMENTS_PER_RUN = 5;
 
 interface Candidate {
@@ -104,10 +105,10 @@ export async function run() {
   });
 
   // LinkedIn/X search snippets don't expose email addresses on their own, so
-  // enrich a small batch via Hunter.io (linkedin_handle lookup — no company
-  // domain needed). Leads that don't get enriched still queue for manual
-  // X DM / LinkedIn comment outreach; enriched ones become eligible for
-  // Echo's Instantly path immediately.
+  // enrich a small batch via Anymail Finder's LinkedIn-URL endpoint (no
+  // company domain needed). Leads that don't get enriched still queue for
+  // manual X DM / LinkedIn comment outreach; enriched ones become eligible
+  // for Echo's Instantly path immediately.
   let enriched = 0;
   for (const c of candidates) {
     if (enriched >= MAX_ENRICHMENTS_PER_RUN || c.platform !== 'linkedin') continue;
@@ -118,7 +119,7 @@ export async function run() {
         enriched += 1;
       }
     } catch (err) {
-      console.error(`[Apollo] Hunter.io lookup failed for ${c.handle}:`, (err as Error).message);
+      console.error(`[Apollo] Anymail Finder lookup failed for ${c.handle}:`, (err as Error).message);
     }
   }
 
