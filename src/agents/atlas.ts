@@ -9,6 +9,7 @@ import * as pixel from './pixel.js';
 import * as pulse from './pulse.js';
 import * as sentinel from './sentinel.js';
 import * as forge from './forge.js';
+import * as ledger from './ledger.js';
 
 const REPORT_BUCKET = 'atlas-content';
 
@@ -127,6 +128,7 @@ async function eveningBlock(): Promise<void> {
 
   await runStep('Pulse', () => pulse.run());
   await runStep('Sentinel', () => sentinel.run());
+  await runStep('Ledger', () => ledger.run());
 
   const summary = `Evening block complete. ${stageInfo.label}`;
   await logAgentRun('Atlas', 'evening', summary, { stage: stageInfo.stage });

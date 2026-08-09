@@ -24,7 +24,7 @@ async function flag(level: 'yellow' | 'red', message: string): Promise<void> {
   if (error) throw error;
 }
 
-async function recomputeMRR(): Promise<void> {
+async function recomputeMRR(): Promise<number> {
   const subs = await stripeClient().subscriptions.list({ status: 'active', limit: 100 });
   let mrrPence = 0;
   for (const sub of subs.data) {
@@ -35,7 +35,17 @@ async function recomputeMRR(): Promise<void> {
       mrrPence += monthlyEquivalent * (item.quantity ?? 1);
     }
   }
-  await setMetric('mrr_pence', Math.round(mrrPence));
+  mrrPence = Math.round(mrrPence);
+  await setMetric('mrr_pence', mrrPence);
+  return mrrPence;
+}
+
+// The webhook below only fires once Stripe has a registered HTTPS URL to
+// call — until then (see README), this direct poll is the only thing that
+// actually keeps mrr_pence current. Called from atlas.ts's evening block.
+export async function run(): Promise<void> {
+  const mrrPence = await recomputeMRR();
+  await logAgentRun('Ledger', 'evening', `MRR: £${(mrrPence / 100).toFixed(2)}`, { mrrPence });
 }
 
 // Wire this into an HTTP handler (see src/server.ts) with the raw request body
