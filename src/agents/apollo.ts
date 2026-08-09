@@ -128,15 +128,49 @@ export async function run() {
     if (error) throw error;
   }
 
+  // Dedup means most days find few or zero brand-new candidates, so the
+  // backlog of already-queued LinkedIn leads that never got enriched (e.g.
+  // anything found back when Hunter.io was wired in, which had a near-0%
+  // hit rate for this ICP) would otherwise sit at email=null forever. Spend
+  // whatever enrichment budget is left today working through that backlog
+  // too, oldest first.
+  let backfilled = 0;
+  if (enriched < MAX_ENRICHMENTS_PER_RUN) {
+    const { data: backlog, error: backlogError } = await supabase
+      .from('lead_queue')
+      .select('id, handle')
+      .eq('platform', 'linkedin')
+      .eq('status', 'queued')
+      .is('email', null)
+      .order('created_at', { ascending: true })
+      .limit(MAX_ENRICHMENTS_PER_RUN - enriched);
+    if (backlogError) throw backlogError;
+
+    for (const lead of backlog ?? []) {
+      try {
+        const email = await findEmailByLinkedIn(lead.handle);
+        if (email) {
+          const { error: updateError } = await supabase.from('lead_queue').update({ email }).eq('id', lead.id);
+          if (updateError) throw updateError;
+          backfilled += 1;
+        }
+      } catch (err) {
+        console.error(`[Apollo] Anymail Finder backfill failed for ${lead.handle}:`, (err as Error).message);
+      }
+    }
+  }
+
   await remember(
     'icp_profiles',
-    { batchSize: candidates.length, enriched, ts: new Date().toISOString() },
+    { batchSize: candidates.length, enriched: enriched + backfilled, ts: new Date().toISOString() },
     { source: 'Apollo' }
   );
-  await logAgentRun('Apollo', 'morning', `Found ${candidates.length} qualified leads, enriched ${enriched} with email.`, {
-    count: candidates.length,
-    enriched,
-  });
+  await logAgentRun(
+    'Apollo',
+    'morning',
+    `Found ${candidates.length} qualified leads, enriched ${enriched} with email, backfilled ${backfilled} from the existing queue.`,
+    { count: candidates.length, enriched, backfilled }
+  );
 
   return candidates.length;
 }

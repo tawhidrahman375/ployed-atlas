@@ -15,6 +15,7 @@
     "collect:reddit": "tsx scripts/pull-reddit.ts",
     "collect:producthunt": "tsx scripts/check-producthunt.ts",
     "backfill:seo": "tsx scripts/backfill-seo-pages.ts",
+    "backfill:lead-emails": "tsx scripts/backfill-lead-emails.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
