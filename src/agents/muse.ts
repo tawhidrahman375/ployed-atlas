@@ -16,6 +16,49 @@ function slugify(input: string): string {
     .slice(0, 60);
 }
 
+function extractJsonArray(text: string): unknown[] {
+  const start = text.indexOf('[');
+  const end = text.lastIndexOf(']');
+  if (start === -1 || end === -1 || end < start) {
+    throw new Error('No JSON array found in response');
+  }
+  return JSON.parse(text.slice(start, end + 1)) as unknown[];
+}
+
+// Picks SEO keyword targets that don't already have a published page, so
+// Muse keeps expanding coverage instead of re-writing the same 1-2 pages
+// forever. Checks against seo_pages by slug (the actual dedup key
+// publishSeoPage upserts on) rather than trusting Claude's instruction not
+// to repeat itself — a prompt-level "don't repeat" is a suggestion, this is
+// the enforcement.
+async function pickFreshKeywords(count: number, context: string, system: string): Promise<string[]> {
+  const { data: existing, error } = await supabase.from('seo_pages').select('slug, title');
+  if (error) throw error;
+  const usedSlugs = new Set((existing ?? []).map((r) => r.slug as string));
+  const usedTitles = (existing ?? []).map((r) => r.title as string);
+
+  const raw = await ask(
+    'quality',
+    `${system} You are picking SEO keyword targets, not writing pages yet.`,
+    `${context}\n\nAlready-published keyword targets (never repeat or closely rephrase any of these):\n${usedTitles.map((t) => `- ${t}`).join('\n') || '(none yet)'}\n\nPropose ${count + 4} distinct, high-intent SEO keyword targets (real search phrases a prospect would type into Google) Ployed could rank for. Respond with a JSON array of strings only, no prose, no markdown fences.`
+  );
+
+  const fresh: string[] = [];
+  try {
+    const candidates = extractJsonArray(raw) as string[];
+    for (const kw of candidates) {
+      const slug = slugify(kw);
+      if (slug && !usedSlugs.has(slug) && !fresh.some((f) => slugify(f) === slug)) {
+        fresh.push(kw);
+        if (fresh.length >= count) break;
+      }
+    }
+  } catch (err) {
+    console.error('[Muse] Failed to parse keyword candidates:', (err as Error).message);
+  }
+  return fresh;
+}
+
 async function saveContent(type: string, title: string, body: string): Promise<string> {
   const objectPath = `${type}/${Date.now()}-${slugify(title)}.md`;
   const { error: uploadError } = await supabase.storage
@@ -48,8 +91,10 @@ export async function run() {
   const xThread = await ask('quality', system, `${context}\n\nWrite one tactical X thread.`);
   await saveContent('x_thread', 'X thread', xThread);
 
-  // TODO: replace with Nova's GSC-gap + competitor-keyword analysis output.
-  const seedKeywords = ['best lead gen tool for AI automation agencies', 'Clay alternative for agencies'];
+  const seedKeywords = await pickFreshKeywords(2, context, system).catch((err: Error) => {
+    console.error('[Muse] Keyword selection failed:', err.message);
+    return [] as string[];
+  });
   const seoPages: string[] = [];
   for (const keyword of seedKeywords) {
     const page = await ask(
