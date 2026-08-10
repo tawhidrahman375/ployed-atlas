@@ -25,6 +25,7 @@ create table if not exists lead_queue (
   platform text,
   niche text,
   signals text,
+  company text, -- business/agency name, when Claude can extract it from the bio; feeds Anymail Finder's name+company fallback lookup
   email text,
   status text not null default 'queued' check (status in ('queued', 'emailed', 'replied', 'converted', 'dead')),
   created_at timestamptz not null default now()
