@@ -2,7 +2,7 @@ import { formatNumber } from '../lib/format';
 
 const STAGES: { key: string; label: string; color: string }[] = [
   { key: 'queued', label: 'Queued', color: 'var(--text-faint)' },
-  { key: 'emailed', label: 'Emailed', color: 'var(--cyan)' },
+  { key: 'emailed', label: 'Queued to Instantly', color: 'var(--cyan)' },
   { key: 'replied', label: 'Replied', color: 'var(--accent)' },
   { key: 'converted', label: 'Converted', color: 'var(--green)' },
   { key: 'dead', label: 'Dead', color: 'var(--red)' },

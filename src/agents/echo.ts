@@ -95,6 +95,12 @@ export async function run() {
     }
   }
 
-  await logAgentRun('Echo', 'morning', `Sent ${sent} cold emails.`, { sent, queued: leads?.length ?? 0 });
+  // "Queued" is deliberate, not "sent" — addLeadToCampaign succeeding only
+  // means Instantly accepted the lead into the campaign's send queue, not
+  // that an email left the building. Actual delivery depends on Instantly's
+  // own sequence timing (and, if the sending account is still warming up,
+  // may not happen at all until warmup clears) — verify real sends via
+  // Instantly's /emails endpoint or campaign analytics, not this count.
+  await logAgentRun('Echo', 'morning', `Queued ${sent} cold email(s) to Instantly.`, { queuedToInstantly: sent, eligible: leads?.length ?? 0 });
   return sent;
 }

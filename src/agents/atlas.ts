@@ -106,7 +106,7 @@ async function morningBlock(): Promise<void> {
     '',
     '## Outreach',
     `Leads found: ${leadsFound ?? 0}`,
-    `Emails sent: ${emailsSent ?? 0}`,
+    `Emails queued to Instantly: ${emailsSent ?? 0} (queued ≠ delivered — check Instantly for actual sends, especially while the sending account is still warming up)`,
     '',
     '## Content',
     museOutput

@@ -25,7 +25,7 @@ export const AGENTS: AgentMeta[] = [
   { key: 'nova', name: 'Nova', role: 'Mines competitor YouTube transcripts for insights', color: '#f472b6' },
   { key: 'vega', name: 'Vega', role: 'Diffs competitor pages and sweeps Reddit for signal', color: '#38bdf8' },
   { key: 'apollo', name: 'Apollo', role: 'Finds leads via Brave Search, enriches emails via Anymail Finder', color: '#fb923c' },
-  { key: 'echo', name: 'Echo', role: 'Sends cold email through Instantly', color: '#34d399' },
+  { key: 'echo', name: 'Echo', role: 'Queues cold email into Instantly (delivery depends on Instantly’s own send schedule/warmup)', color: '#34d399' },
   { key: 'muse', name: 'Muse', role: 'Writes LinkedIn, X and SEO content', color: '#e879f9' },
   { key: 'pixel', name: 'Pixel', role: 'Fires and polls Higgsfield video jobs', color: '#fbbf24' },
   { key: 'pulse', name: 'Pulse', role: 'Pulls GSC, PostHog and Instantly analytics', color: '#22d3ee' },
