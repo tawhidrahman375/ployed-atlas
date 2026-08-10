@@ -57,3 +57,27 @@ export async function publishSeoPage(keyword: string, rawBody: string, contentQu
 
   return `${SITE_URL}/resources/${slug}`;
 }
+
+// Same mechanism as publishSeoPage, separate table/URL prefix — Sage's docs
+// pages live at /docs, not /resources, and target AI-search-citation intent
+// rather than general SEO traffic.
+export async function publishDocsPage(topic: string, rawBody: string, contentQueueId?: string): Promise<string> {
+  const slug = slugify(topic);
+  const { title, bodyMarkdown, description } = parseSeoBody(rawBody);
+
+  const { error } = await supabase.from('docs_pages').upsert(
+    {
+      slug,
+      title,
+      meta_description: description,
+      body_markdown: bodyMarkdown,
+      content_queue_id: contentQueueId ?? null,
+      published: true,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'slug' }
+  );
+  if (error) throw error;
+
+  return `${SITE_URL}/docs/${slug}`;
+}

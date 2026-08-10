@@ -5,6 +5,7 @@ import * as nova from './nova.js';
 import * as apollo from './apollo.js';
 import * as echo from './echo.js';
 import * as muse from './muse.js';
+import * as sage from './sage.js';
 import * as pixel from './pixel.js';
 import * as pulse from './pulse.js';
 import * as sentinel from './sentinel.js';
@@ -88,6 +89,7 @@ async function morningBlock(): Promise<void> {
 
   // Round 3 — content.
   const museOutput = await runStep('Muse', () => muse.run());
+  const sageOutput = await runStep('Sage', () => sage.run());
   const slideshowHook = await runStep('Pixel', () => pixel.run());
 
   // Round 4 — report.
@@ -110,6 +112,7 @@ async function morningBlock(): Promise<void> {
     museOutput
       ? `LinkedIn post, X thread, and ${museOutput.seoPages.length} SEO pages produced.`
       : 'Muse did not complete this run.',
+    sageOutput ? `${sageOutput.pages.length} docs page(s) produced.` : 'Sage did not complete this run.',
     slideshowHook ? `Slideshow produced: "${slideshowHook}"` : 'No slideshow produced.',
     '',
     '## Experiments',

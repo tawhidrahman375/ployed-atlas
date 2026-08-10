@@ -114,6 +114,25 @@ create table if not exists slideshows (
   created_at timestamptz not null default now()
 );
 
+-- Docs pages — Sage writes, ployed.net/docs (main app repo) reads. Separate
+-- from seo_pages/Muse's /resources output: same publish mechanism, different
+-- URL prefix and aimed at AI-search-citation formatting rather than general
+-- SEO traffic. Note: seo_pages itself predates this file and was created
+-- directly in Supabase, so it isn't defined here — docs_pages mirrors its
+-- inferred shape (the columns src/lib/seoPages.ts in the main app reads).
+create table if not exists docs_pages (
+  id uuid primary key default gen_random_uuid(),
+  slug text not null unique,
+  title text not null,
+  meta_description text,
+  body_markdown text not null,
+  content_queue_id uuid,
+  published boolean not null default true,
+  published_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists idx_docs_pages_published on docs_pages (published, published_at desc);
+
 -- RLS: the dashboard embeds NEXT_PUBLIC_SUPABASE_ANON_KEY client-side, which
 -- makes that key effectively public. Lock it to read-only. Agents write via
 -- SUPABASE_SERVICE_ROLE_KEY, which bypasses RLS, so this doesn't affect them.
@@ -126,6 +145,7 @@ alter table risk_flags enable row level security;
 alter table experiments enable row level security;
 alter table higgsfield_jobs enable row level security;
 alter table slideshows enable row level security;
+alter table docs_pages enable row level security;
 
 do $$
 begin
@@ -155,5 +175,8 @@ begin
   end if;
   if not exists (select 1 from pg_policies where tablename = 'slideshows' and policyname = 'anon read slideshows') then
     create policy "anon read slideshows" on slideshows for select to anon using (true);
+  end if;
+  if not exists (select 1 from pg_policies where tablename = 'docs_pages' and policyname = 'anon read published docs_pages') then
+    create policy "anon read published docs_pages" on docs_pages for select to anon using (published = true);
   end if;
 end $$;

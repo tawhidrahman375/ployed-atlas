@@ -35,6 +35,34 @@ Every agent is now real, tested code — nothing in the repo uses `notWired(` an
 | Apollo | ✅ real | Brave Search API; verified live with a real run (56 qualified candidates, 0 duplicates) |
 | Apollo (email enrichment) | 🟡 wired, unverified | Anymail Finder `linkedin-url` lookup, capped at 5/run; code is real but not yet run with a live `ANYMAIL_FINDER_API_KEY` |
 
+## Roadmap & planning context
+
+The original plan (tracked in Notion, "Ployed Marketing Agent — Master Plan") called for 19 agents; 12 of the 19 now exist (the 11 in the table above, plus Sage below). These were never started:
+
+| Agent | Role | Priority |
+|---|---|---|
+| Forge | Runs growth experiments, tests hypotheses — `src/agents/forge.ts` exists with the table plumbing, but nothing calls `proposeExperiment()` yet | 🥇 highest — biggest missing piece pre-PMF |
+| Keeper | Customer success — monitors usage, finds churn risk, collects testimonials | 🥈 next, once customers exist |
+| Mercury | Partnerships — Skool owners, newsletters, affiliates | 🥉 |
+| Scribe | Turns discoveries into SOPs/playbooks | Lower |
+| Oracle | Forecasts MRR/churn — needs real data volume first | Lowest, data-gated |
+| Ares | Sales — handles objections and conversion | Not scheduled |
+| Beacon | Telegram notifications | Dropped from scope entirely — home all day, dashboard covers it |
+
+**Sage — ✅ built** (`src/agents/sage.ts`, wired into `atlas.ts`'s Round 3 alongside Muse). A separate agent from Muse, not a config flag: picks fresh doc topics (deduped against `docs_pages`, distinct from Muse's `seo_pages` dedup), writes direct-answer/AI-citation-formatted pages (open with a self-contained answer, then `##` sections), and publishes live to `ployed.net/docs/<slug>` via `publishDocsPage()` in `seoPublish.ts`. Produces 2 pages/run, same cadence as Muse's SEO pages. Requires a schema migration before it can run for real — `docs_pages` is defined in `supabase/schema.sql` but not yet applied to the live Supabase project (same caveat applied to every other table here: run the schema file against the project before relying on it). The main Ployed app repo has matching `/docs` and `/docs/:slug` routes (`src/pages/Docs.tsx`, `src/pages/DocPage.tsx`, `src/lib/docsPages.ts`) reading the same table.
+
+**Goal stages** — read live from Stripe MRR (`getStage()` in `src/agents/atlas.ts`), logged into every morning/evening report. Nothing currently changes agent behavior by stage yet — it's informational only, surfaced in the daily report:
+
+| Stage | MRR threshold | Focus |
+|---|---|---|
+| 1 | £0 | Max outreach volume, learn every objection |
+| 2 | > £0 | Double down on what closed, gather testimonials |
+| 3 | ≥ £1,000 | Scale winning channels, SEO compounding begins |
+| 4 | ≥ £5,000 | Paid experiments, partnerships |
+| 5 | ≥ £10,000 | Retention focus, kill losers, efficiency mode |
+
+**Model switching** — `src/lib/claude.ts` exports `MODELS.bulk` (`claude-haiku-4-5-20251001`) and `MODELS.quality` (`claude-sonnet-5`), overridable via `MODEL_BULK`/`MODEL_QUALITY` env vars. Convention (not enforced by any linter): Haiku for high-volume/low-stakes work (transcript processing, scraping, logging), Sonnet for anything a human will actually read (cold email copy, SEO pages, social posts, the daily report).
+
 ## Build order
 
 Status as of 2026-08-08:
