@@ -6,6 +6,7 @@ export type AgentKey =
   | 'apollo'
   | 'echo'
   | 'muse'
+  | 'sage'
   | 'pixel'
   | 'pulse'
   | 'ledger'
@@ -27,6 +28,7 @@ export const AGENTS: AgentMeta[] = [
   { key: 'apollo', name: 'Apollo', role: 'Finds leads via Brave Search, enriches emails via Anymail Finder', color: '#fb923c' },
   { key: 'echo', name: 'Echo', role: 'Queues cold email into Instantly (delivery depends on Instantly’s own send schedule/warmup)', color: '#34d399' },
   { key: 'muse', name: 'Muse', role: 'Writes LinkedIn, X and SEO content', color: '#e879f9' },
+  { key: 'sage', name: 'Sage', role: 'Writes AI-citation docs pages for ployed.net/docs', color: '#2dd4bf' },
   { key: 'pixel', name: 'Pixel', role: 'Fires and polls Higgsfield video jobs', color: '#fbbf24' },
   { key: 'pulse', name: 'Pulse', role: 'Pulls GSC, PostHog and Instantly analytics', color: '#22d3ee' },
   { key: 'ledger', name: 'Ledger', role: 'Reads live Stripe MRR — always-on webhook listener', color: '#4ade80' },
@@ -50,15 +52,20 @@ export interface Pipeline {
   rounds: PipelineRound[];
 }
 
+// Mirrors the actual call order in src/agents/atlas.ts, not an idealized
+// version of it — e.g. Pulse deliberately runs after Apollo/Echo, not in
+// parallel with Nova, because it reads "today" counts that don't exist yet
+// otherwise (see the comment in morningBlock()); Pixel runs synchronously
+// within the morning block, not the evening one; Sage runs alongside Muse.
 export const PIPELINES: Pipeline[] = [
   {
     id: 'morning',
     title: 'Morning block',
     trigger: 'VPS cron · 08:00 UTC',
     rounds: [
-      { label: 'Round 1 · parallel', parallel: true, agents: ['nova', 'pulse'] },
-      { label: 'Round 2 · sequential', parallel: false, agents: ['apollo', 'echo'] },
-      { label: 'Round 3 · sequential', parallel: false, agents: ['muse', 'pixel'] },
+      { label: 'Round 1 · research', parallel: false, agents: ['nova'] },
+      { label: 'Round 2 · outreach + analytics', parallel: false, agents: ['apollo', 'echo', 'pulse'] },
+      { label: 'Round 3 · content', parallel: false, agents: ['muse', 'sage', 'pixel'] },
       { label: 'Round 4 · report', parallel: false, agents: ['forge'] },
     ],
   },
@@ -66,7 +73,7 @@ export const PIPELINES: Pipeline[] = [
     id: 'evening',
     title: 'Evening block',
     trigger: 'VPS cron · 20:00 UTC',
-    rounds: [{ label: 'Sequential', parallel: false, agents: ['pulse', 'sentinel', 'pixel'] }],
+    rounds: [{ label: 'Sequential', parallel: false, agents: ['pulse', 'sentinel', 'ledger'] }],
   },
   {
     id: 'github',

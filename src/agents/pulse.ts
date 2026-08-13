@@ -3,8 +3,12 @@ import { requireEnv } from '../lib/env.js';
 import { getCampaignAnalytics } from '../lib/instantly.js';
 import { logAgentRun } from '../mnemos.js';
 import { supabase } from '../lib/supabase.js';
+import { setMetric } from '../lib/metrics.js';
 
-async function pullGSC(): Promise<{ clicks: number; impressions: number }> {
+// Exported so scripts/pull-gsc.ts and scripts/pull-posthog.ts (the
+// standalone GitHub Actions collectors) call the same real implementation
+// instead of duplicating it — see those scripts for why that matters.
+export async function pullGSC(): Promise<{ clicks: number; impressions: number }> {
   const credentials = JSON.parse(requireEnv('GSC_CREDENTIALS_JSON'));
   const client = new JWT({
     email: credentials.client_email,
@@ -26,7 +30,7 @@ async function pullGSC(): Promise<{ clicks: number; impressions: number }> {
   return { clicks: row?.clicks ?? 0, impressions: row?.impressions ?? 0 };
 }
 
-async function pullPostHog(): Promise<{ eventsToday: number }> {
+export async function pullPostHog(): Promise<{ eventsToday: number }> {
   const res = await fetch(`https://eu.posthog.com/api/projects/${requireEnv('POSTHOG_PROJECT_ID')}/query/`, {
     method: 'POST',
     headers: {
@@ -46,16 +50,6 @@ async function pullInstantlyStats(): Promise<{ sent: number; bounced: number; re
   const today = new Date().toISOString().slice(0, 10);
   const overview = await getCampaignAnalytics(today, today);
   return { sent: overview.emails_sent_count, bounced: overview.bounced_count, replies: overview.reply_count };
-}
-
-async function setMetric(name: string, value: string | number): Promise<void> {
-  const { error } = await supabase
-    .from('dashboard_metrics')
-    .upsert(
-      { metric_name: name, metric_value: String(value), updated_at: new Date().toISOString() },
-      { onConflict: 'metric_name' }
-    );
-  if (error) throw error;
 }
 
 export async function run() {
@@ -82,8 +76,14 @@ export async function run() {
     await setMetric('instantly_bounced_today', instantly.value.bounced);
     await setMetric('instantly_replies_today', instantly.value.replies);
   } else {
+    // All three Instantly-sourced metrics belong to this one pull, so a
+    // failure here has to reset all three — leaving bounced/replies at
+    // whatever they were from the last successful run would show them as
+    // "today's" numbers when they might be days stale.
     console.error('[Pulse] Instantly pull failed:', instantly.reason);
     await setMetric('emails_sent_today', 0);
+    await setMetric('instantly_bounced_today', 0);
+    await setMetric('instantly_replies_today', 0);
   }
 
   const startOfToday = new Date().toISOString().slice(0, 10);
