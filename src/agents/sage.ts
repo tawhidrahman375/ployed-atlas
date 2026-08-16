@@ -74,6 +74,9 @@ async function pickFreshTopics(count: number): Promise<string[]> {
   return fresh;
 }
 
+// Archived to storage but not queued in content_queue (the dashboard's
+// "ready to download" list) — docs pages auto-publish live via
+// publishDocsPage below, so there's no manual download step for them.
 async function saveDraft(title: string, body: string): Promise<string> {
   const objectPath = `docs_page/${Date.now()}-${slugify(title)}.md`;
   const { error: uploadError } = await supabase.storage
@@ -82,15 +85,7 @@ async function saveDraft(title: string, body: string): Promise<string> {
   if (uploadError) throw uploadError;
 
   const { data: publicUrl } = supabase.storage.from(BUCKET).getPublicUrl(objectPath);
-
-  const { data: row, error } = await supabase
-    .from('content_queue')
-    .insert({ type: 'docs_page', title, file_path: publicUrl.publicUrl, status: 'ready' })
-    .select('id')
-    .single();
-  if (error) throw error;
-
-  return row.id as string;
+  return publicUrl.publicUrl;
 }
 
 export async function run(): Promise<{ pages: string[] } | null> {
@@ -108,8 +103,8 @@ export async function run(): Promise<{ pages: string[] } | null> {
         4096 // 800-1500 words plus thinking overhead needs more than the 2048 default
       );
 
-      const contentQueueId = await saveDraft(topic, body);
-      const url = await publishDocsPage(topic, body, contentQueueId);
+      await saveDraft(topic, body);
+      const url = await publishDocsPage(topic, body);
       pages.push(url);
     }
 
