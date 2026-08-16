@@ -59,7 +59,7 @@ async function pickFreshKeywords(count: number, context: string, system: string)
   return fresh;
 }
 
-async function saveContent(type: string, title: string, body: string): Promise<string> {
+async function uploadDraft(type: string, title: string, body: string): Promise<string> {
   const objectPath = `${type}/${Date.now()}-${slugify(title)}.md`;
   const { error: uploadError } = await supabase.storage
     .from(BUCKET)
@@ -67,13 +67,20 @@ async function saveContent(type: string, title: string, body: string): Promise<s
   if (uploadError) throw uploadError;
 
   const { data: publicUrl } = supabase.storage.from(BUCKET).getPublicUrl(objectPath);
+  return publicUrl.publicUrl;
+}
+
+// LinkedIn/X posts have no auto-publish integration, so they're real action
+// items — queued in content_queue for the dashboard's "ready to download" list.
+async function saveContent(type: string, title: string, body: string): Promise<string> {
+  const publicUrl = await uploadDraft(type, title, body);
 
   const { error } = await supabase
     .from('content_queue')
-    .insert({ type, title, file_path: publicUrl.publicUrl, status: 'ready' });
+    .insert({ type, title, file_path: publicUrl, status: 'ready' });
   if (error) throw error;
 
-  return publicUrl.publicUrl;
+  return publicUrl;
 }
 
 export async function run() {
@@ -103,9 +110,9 @@ export async function run() {
       `Keyword: ${keyword}\n${context}`,
       4096 // 800-1500 words plus thinking overhead needs more than the 2048 default
     );
-    seoPages.push(await saveContent('seo_page', keyword, page));
-    // Same-day, no manual step: goes live at ployed.net/resources/<slug>
-    // right after Muse finishes writing it.
+    // Archived to storage but not queued as a download item — it auto-publishes
+    // live at ployed.net/resources/<slug> right after Muse finishes writing it.
+    seoPages.push(await uploadDraft('seo_page', keyword, page));
     await publishSeoPage(keyword, page);
   }
 
