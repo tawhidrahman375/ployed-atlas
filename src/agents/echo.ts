@@ -60,6 +60,10 @@ export async function run() {
     return 0;
   }
 
+  // Fail fast on missing campaign config, before spending any Claude calls
+  // drafting emails that every lead below would fail to push anyway.
+  requireEnv('INSTANTLY_CAMPAIGN_ID');
+
   const [wins, failures] = await Promise.all([
     recall('outreach_wins', 20),
     recall('outreach_failures', 20),
@@ -77,6 +81,7 @@ export async function run() {
   if (error) throw error;
 
   let sent = 0;
+  const failed: { email: string; error: string }[] = [];
   for (const lead of leads ?? []) {
     const raw = await ask(
       'quality',
@@ -90,8 +95,13 @@ export async function run() {
       await supabase.from('lead_queue').update({ status: 'emailed' }).eq('id', lead.id);
       sent += 1;
     } catch (err) {
-      console.error((err as Error).message);
-      break; // no campaign configured (or Instantly call failed) — stop rather than silently drop the rest of the batch
+      const message = (err as Error).message;
+      console.error(message);
+      // One lead's Instantly push failing (e.g. duplicate, transient API
+      // error) shouldn't block every other eligible lead in the batch —
+      // skip it and keep going, but keep the error so it's visible without
+      // digging through VPS-local stdout.
+      failed.push({ email: lead.email, error: message });
     }
   }
 
@@ -101,6 +111,11 @@ export async function run() {
   // own sequence timing (and, if the sending account is still warming up,
   // may not happen at all until warmup clears) — verify real sends via
   // Instantly's /emails endpoint or campaign analytics, not this count.
-  await logAgentRun('Echo', 'morning', `Queued ${sent} cold email(s) to Instantly.`, { queuedToInstantly: sent, eligible: leads?.length ?? 0 });
+  await logAgentRun('Echo', 'morning', `Queued ${sent} cold email(s) to Instantly.`, {
+    queuedToInstantly: sent,
+    eligible: leads?.length ?? 0,
+    failed: failed.length,
+    errors: failed,
+  });
   return sent;
 }
