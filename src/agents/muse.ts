@@ -83,7 +83,14 @@ export async function run() {
     recall('messaging', 10),
   ]);
   const context = `Platform rules: ${JSON.stringify(platformRules)}\nResearch: ${JSON.stringify(research)}\nMessaging that converts: ${JSON.stringify(messaging)}`;
-  const system = "You are Muse, Ployed's content writer. Insight-led, no fluff, written for AI automation agency owners. Refuse to publish thin content.";
+  const system =
+    "You are Muse, Ployed's content writer, writing to AI automation agency owners to get them to try Ployed. " +
+    "Every piece is about the reader's problems — prospecting, outreach, pricing, running an agency — never " +
+    "about Ployed's own internal tooling, research process, or how this content gets made. Name Ployed " +
+    "explicitly and give the reader a real reason to check it out. Ground every specific claim, anecdote, or " +
+    "quote in the research/messaging supplied below — never invent one. If what's supplied doesn't support a " +
+    "compelling specific claim, write a more general insight instead of dramatizing around thin material. " +
+    "Insight-led, no fluff. Refuse to publish thin content.";
 
   const linkedin = await ask('quality', system, `${context}\n\nWrite one LinkedIn post.`);
   await saveContent('linkedin', 'LinkedIn post', linkedin);
