@@ -1,37 +1,43 @@
-import { requireEnv } from './env.js';
+import { requireEnv, getEnv } from './env.js';
 
 // Confirmed by extracting Saleshandy's own official CLI package
 // (@saleshandy/saleshandy-cli, pulled from registry.npmjs.org — this
 // session's network egress blocks every Saleshandy domain directly, but not
 // npm's registry, so this was the actual open-api.saleshandy.com client
 // source, not a guess): base URL has NO /v1 suffix — the version segment
-// lives inside each path instead (/api/open-api/v1/...). The original guess
-// here (`https://open-api.saleshandy.com/v1`) is exactly why the add-prospect
-// call 404'd: the real host + prefix is different, not just the path tail.
+// lives inside each path instead (/api/open-api/v1/...).
 const BASE_URL = 'https://open-api.saleshandy.com';
 
 // The CLI's ApiClient sets this on every request alongside x-api-key and
-// Content-Type — confirmed from its axios.create() defaults, not a guess.
-// Unclear whether the API actually enforces it or the CLI just always sends
-// it, but matching the real client's behavior exactly is safer than omitting
-// something we don't have a reason to.
+// Content-Type — confirmed from its axios.create() defaults.
 const COMMON_HEADERS = {
   'sh-application': 'open-api',
 };
 
-export interface SequenceAnalytics {
-  emails_sent_count: number;
-  bounced_count: number;
-  reply_count: number;
+// Confirmed from the CLI's ApiClient response interceptor: a successful
+// response wraps the real payload as `{ payload: ... }`. The CLI uses axios
+// with an interceptor that unwraps this automatically before any command
+// code sees it; this repo uses raw fetch, so unwrapping has to happen here
+// instead, or every command that expects `data` to already be the inner
+// value (e.g. an array of steps) would silently see the wrapper instead.
+function unwrapPayload(data: unknown): unknown {
+  if (data && typeof data === 'object' && 'payload' in data) {
+    return (data as { payload: unknown }).payload;
+  }
+  return data;
 }
 
-// Every POST in Saleshandy's own CLI wraps successful responses in
-// `{ payload: ... }` (their ApiClient unwraps this automatically via an
-// axios interceptor) and errors in either `{ code, type, message }`
-// (Saleshandy's own envelope) or `{ statusCode, message | messages }`
-// (a raw NestJS validation error) — confirmed from the CLI source. This repo
-// doesn't use axios, so callers here see the raw envelope, not an unwrapped
-// payload — keep that in mind when parsing a response.
+async function saleshandyGet<T>(path: string): Promise<T> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    headers: { 'x-api-key': requireEnv('SALESHANDY_API_KEY'), ...COMMON_HEADERS },
+  });
+  const bodyText = await res.text();
+  if (!res.ok) {
+    throw new Error(`Saleshandy API ${path} failed: ${res.status} ${bodyText}`);
+  }
+  return unwrapPayload(JSON.parse(bodyText)) as T;
+}
+
 async function saleshandyPost<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
     method: 'POST',
@@ -42,32 +48,31 @@ async function saleshandyPost<T>(path: string, body: unknown): Promise<T> {
     },
     body: JSON.stringify(body),
   });
+  const bodyText = await res.text();
   if (!res.ok) {
-    throw new Error(`Saleshandy API ${path} failed: ${res.status} ${await res.text()}`);
+    throw new Error(`Saleshandy API ${path} failed: ${res.status} ${bodyText}`);
   }
-  return res.json() as Promise<T>;
+  return unwrapPayload(JSON.parse(bodyText)) as T;
+}
+
+export interface SequenceAnalytics {
+  emails_sent_count: number;
+  bounced_count: number;
+  reply_count: number;
 }
 
 // Confirmed real path + method + request body shape from the CLI's
-// `analytics consolidated-stats` command (analytics/consolidated-stats.js):
-// POST /api/open-api/v1/analytics/consolidated-stats with
-// { sequenceIds: string[], startDate, endDate, pageNum, pageLimit }. Chosen
-// over the CLI's other analytics command (`sequence-stats`, POST
-// /api/open-api/v1/analytics/stats) because that one takes no date range at
-// all — no start/end-date flags exist on it — so it can't serve Sentinel's
-// 7-day bounce window or Pulse's "today" pull.
+// `analytics consolidated-stats` command: POST
+// /api/open-api/v1/analytics/consolidated-stats with { sequenceIds: string[],
+// startDate, endDate, pageNum, pageLimit } — note the plural `sequenceIds`
+// here is correct and unaffected by the add-prospect fix below; they're
+// different endpoints with different (and non-interchangeable) DTOs, as the
+// add-prospect 400 makes clear.
 //
-// ⚠️ Response shape is NOT confirmed — the CLI just dumps this endpoint's
-// response generically (`outputSingle(data, flags)`) without assuming any
-// particular fields, unlike `sequence-stats` (whose CLI command does
-// destructure a known shape: `{ sequenceName, sequenceId, prospects: [{total,
-// open, replied, clicked, bounced, unsubscribed}], emails: [{sent, open,
-// replied, clicked, bounced}] }` — note these are arrays, not flat counts,
-// likely one row per sequence step). The mapping below is a best-guess at a
-// flat totals shape and may not match what consolidated-stats actually
-// returns — print the raw response (e.g. via a small test script) and fix
-// this mapping before trusting Sentinel's bounce-rate math or Pulse's
-// dashboard numbers.
+// ⚠️ Response shape still NOT confirmed — the CLI dumps this endpoint's
+// response generically without assuming a shape. sent/bounced/replied below
+// remain a best guess; verify against a real response before trusting
+// Sentinel's bounce-rate math or Pulse's dashboard numbers.
 export async function getSequenceAnalytics(startDate?: string, endDate?: string): Promise<SequenceAnalytics> {
   const today = new Date().toISOString().slice(0, 10);
   const raw = await saleshandyPost<{ sent?: number; bounced?: number; replied?: number }>(
@@ -87,56 +92,89 @@ export async function getSequenceAnalytics(startDate?: string, endDate?: string)
   };
 }
 
-// Confirmed real path + method from the CLI's `sequences prospects-import`
-// command (sequences/prospects-import.js): POST
-// /api/open-api/v1/sequences/prospects/import-with-field-name. This is what
-// 404'd before — the old guess (`/sequences/{sequenceId}/prospects`) isn't a
-// real route at all; the sequence ID never goes in the URL for this
-// operation.
+interface SequenceStep {
+  id: string;
+  number: number;
+  type: number; // confirmed from sequences/steps/create.js's channel comment: 1=Email
+  status?: string;
+}
+
+const EMAIL_STEP_TYPE = 1;
+
+// Live 400 from a real account confirmed the add-prospect DTO rejects a
+// `sequenceId` field outright ("property sequenceId should not exist") — the
+// sequence is identified purely by which step you target, since a step
+// belongs to exactly one sequence. So "the sequence ID" has to resolve to a
+// step ID first, via the CLI's own confirmed `sequences steps list` path:
+// GET /api/open-api/v1/sequences/{sequenceId}/steps.
 //
-// Confirmed IMPORTANT behavioral fact: this is an ASYNC operation, not a
-// synchronous add. The CLI's own success message is "Prospect import has
-// started successfully" — the response is a job acknowledgement, not proof
-// the prospect was actually created/enrolled. Real confirmation requires
-// polling the companion status endpoint (also confirmed from the CLI, see
-// getProspectImportStatus below). A 2xx from this function means "Saleshandy
-// accepted the import job," not "the prospect is in the sequence" — treat it
-// accordingly, same spirit as the existing "queued ≠ delivered" comments
-// elsewhere in this codebase.
+// Picks the first Email-type step (lowest `number`) as the default target,
+// since Echo only does cold email — a sequence mixing channels (LinkedIn,
+// calls, etc.) could have its first step be a non-email one, which this
+// deliberately skips past. Override with SALESHANDY_STEP_ID if you want a
+// specific step instead (mirrors the CLI's own optional --step-id flag).
+// Cached per-process so a batch run (Echo processes many leads per run)
+// doesn't re-fetch the step list for every single lead.
+let cachedStepId: string | undefined;
+
+async function resolveStepId(sequenceId: string): Promise<string> {
+  const override = getEnv('SALESHANDY_STEP_ID');
+  if (override) return override;
+  if (cachedStepId) return cachedStepId;
+
+  const steps = await saleshandyGet<SequenceStep[]>(`/api/open-api/v1/sequences/${sequenceId}/steps`);
+  const emailSteps = steps.filter((s) => s.type === EMAIL_STEP_TYPE).sort((a, b) => a.number - b.number);
+  const step = emailSteps[0] ?? [...steps].sort((a, b) => a.number - b.number)[0];
+  if (!step) {
+    throw new Error(
+      `No steps found for Saleshandy sequence ${sequenceId} — create a step in it first, or set SALESHANDY_STEP_ID directly.`
+    );
+  }
+  cachedStepId = step.id;
+  return step.id;
+}
+
+// Confirmed real path from the CLI's `sequences prospects-import` command:
+// POST /api/open-api/v1/sequences/prospects/import-with-field-name.
 //
-// Body shape: `stepId` is confirmed optional — the CLI's --step-id flag only
-// sets `body.stepId` when explicitly passed, implying Saleshandy defaults to
-// the sequence's first step when it's omitted (this is inferred from that
-// optionality, not stated outright). `prospectList` as the array key is
-// confirmed from external Saleshandy documentation (independently, not from
-// the CLI). `sequenceId` as a top-level body field is inferred, not directly
-// confirmed: the CLI command has no --sequence-id flag at all, so whatever
-// JSON file a user supplies must already carry it — there's no other way the
-// API would know which sequence this targets.
+// Confirmed IMPORTANT behavioral fact: this is an ASYNC operation. The CLI's
+// own success message is "Prospect import has started successfully" — a 2xx
+// here means "Saleshandy accepted the import job," not "the prospect is in
+// the sequence." Real confirmation requires polling
+// getProspectImportStatus() below.
 //
-// ⚠️ NOT confirmed: the exact key names inside each prospectList entry.
-// `email` is likely flat (Saleshandy's read-side /contacts endpoint returns
-// a flat `email` field). Names/company are more uncertain — the read-side
-// API stores them as labeled attributes with literal string keys "First
-// Name" / "Last Name" (confirmed from prospects/list.js's
+// Body shape, now grounded in a real 400 from a live account rather than
+// guesses: `sequenceId` is REJECTED outright (see resolveStepId above —
+// `stepId` alone identifies the target). `verifyProspects` (boolean) and
+// `conflictAction` (enum) are REQUIRED, not optional as the previous version
+// assumed — omitting them is what triggered "must be a boolean value" /
+// "must be a valid enum value". conflictAction: 'addMissingFields' and
+// 'overwrite' are both confirmed real values from Saleshandy's own prospect-
+// import documentation (describing the same "update missing fields /
+// overwrite / skip" three-way choice surfaced in their UI); 'addMissingFields'
+// is used here as the safer default — it can't clobber existing prospect
+// data, unlike 'overwrite'. The UI also exposes a "skip" behavior but no
+// source seen so far confirms its literal enum string, so it's deliberately
+// not used as a guess.
+//
+// ⚠️ Still NOT confirmed: the exact per-prospect field-name keys inside
+// prospectList. `email` is likely flat (Saleshandy's read-side /contacts
+// endpoint returns a flat `email` field). Names/company are more uncertain —
+// the read-side API stores them as labeled attributes with literal string
+// keys "First Name" / "Last Name" (confirmed from prospects/list.js's
 // getAttr(row, 'First Name') calls), and this write endpoint is literally
-// named "import-with-field-name" — strongly suggesting import entries key by
-// the same human-readable labels, not camelCase (firstName/lastName). Kept
-// as camelCase below anyway since that's still a guess either way and I have
-// no confirmed default label for "company" — verify against a real account
-// and adjust to `"First Name"`/`"Last Name"`/whatever the real company label
-// is if camelCase 400s.
-//
-// verifyProspects/conflictAction from the previous version are dropped here
-// — that pairing came from a different, more generic Saleshandy doc snippet
-// with no confirmation it applies to this exact endpoint, and shipping a
-// wrong enum value (e.g. an invalid conflictAction) risks trading one 4xx
-// for another. Omitting optional fields Saleshandy doesn't require is safer
-// than guessing their values.
+// named "import-with-field-name" — suggesting import entries key by those
+// same human-readable labels, not camelCase (firstName/lastName). Kept as
+// camelCase below since I have no confirmed default label for "company"
+// either — if this 400s again on prospectList specifically (not stepId/
+// verifyProspects/conflictAction, which are now fixed), that's the next
+// thing to fix, and the error message will likely name the exact property.
 export async function addProspectToSequence(
   sequenceId: string,
   prospect: { email: string; firstName?: string; companyName?: string; personalization?: string }
 ): Promise<string> {
+  const stepId = await resolveStepId(sequenceId);
+
   const res = await fetch(`${BASE_URL}/api/open-api/v1/sequences/prospects/import-with-field-name`, {
     method: 'POST',
     headers: {
@@ -145,7 +183,9 @@ export async function addProspectToSequence(
       ...COMMON_HEADERS,
     },
     body: JSON.stringify({
-      sequenceId,
+      stepId,
+      verifyProspects: false,
+      conflictAction: 'addMissingFields',
       prospectList: [
         {
           email: prospect.email,
@@ -172,12 +212,10 @@ export async function addProspectToSequence(
 }
 
 // Confirmed real path + method from the CLI's `prospects import-status`
-// command (prospects/import-status.js): GET
-// /api/open-api/v1/prospects/import-status/{requestId}. Not wired into
-// echo.ts — addProspectToSequence's caller doesn't currently poll this — but
-// exported so a test script (or a future retry/verification pass in Echo)
-// can check whether an import job actually landed instead of trusting the
-// initial "accepted" response.
+// command: GET /api/open-api/v1/prospects/import-status/{requestId}. Not
+// wired into echo.ts's flow — exported so a test script (or a future
+// retry/verification pass in Echo) can check whether an import job actually
+// landed instead of trusting the initial "accepted" response.
 export async function getProspectImportStatus(requestId: string): Promise<string> {
   const res = await fetch(`${BASE_URL}/api/open-api/v1/prospects/import-status/${requestId}`, {
     headers: {
