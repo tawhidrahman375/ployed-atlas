@@ -1,15 +1,15 @@
 import { supabase } from '../lib/supabase.js';
-import { getCampaignAnalytics } from '../lib/instantly.js';
+import { getSequenceAnalytics } from '../lib/saleshandy.js';
 import { logAgentRun } from '../mnemos.js';
 
 const BOUNCE_YELLOW = 0.03;
 const BOUNCE_RED = 0.05;
 const LOOKBACK_DAYS = 7; // a single day's ratio is too noisy at low volume
 
-async function getInstantlyBounceRate(): Promise<number> {
+async function getSaleshandyBounceRate(): Promise<number> {
   const end = new Date();
   const start = new Date(end.getTime() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
-  const overview = await getCampaignAnalytics(start.toISOString().slice(0, 10), end.toISOString().slice(0, 10));
+  const overview = await getSequenceAnalytics(start.toISOString().slice(0, 10), end.toISOString().slice(0, 10));
 
   return overview.emails_sent_count > 0 ? overview.bounced_count / overview.emails_sent_count : 0;
 }
@@ -21,7 +21,7 @@ async function flag(level: 'green' | 'yellow' | 'red', agent: string, message: s
 
 export async function run() {
   try {
-    const bounceRate = await getInstantlyBounceRate();
+    const bounceRate = await getSaleshandyBounceRate();
     if (bounceRate >= BOUNCE_RED) {
       await flag('red', 'Echo', `Bounce rate ${(bounceRate * 100).toFixed(1)}% — pause Echo immediately.`);
     } else if (bounceRate >= BOUNCE_YELLOW) {
@@ -32,7 +32,7 @@ export async function run() {
   }
 
   // TODO once wired: domain reputation (MX Toolbox), engagement-rate drops
-  // across LinkedIn/X/TikTok, Instantly sending velocity vs safe limits.
+  // across LinkedIn/X/TikTok, Saleshandy sending velocity vs safe limits.
 
   await logAgentRun('Sentinel', 'evening', 'Risk sweep complete.');
 }
