@@ -2,21 +2,12 @@ import Stripe from 'stripe';
 import { requireEnv } from '../lib/env.js';
 import { supabase } from '../lib/supabase.js';
 import { logAgentRun } from '../mnemos.js';
+import { setMetric } from '../lib/metrics.js';
 
 let stripe: Stripe | undefined;
 function stripeClient(): Stripe {
   stripe ??= new Stripe(requireEnv('STRIPE_SECRET_KEY'));
   return stripe;
-}
-
-async function setMetric(name: string, value: string | number): Promise<void> {
-  const { error } = await supabase
-    .from('dashboard_metrics')
-    .upsert(
-      { metric_name: name, metric_value: String(value), updated_at: new Date().toISOString() },
-      { onConflict: 'metric_name' }
-    );
-  if (error) throw error;
 }
 
 async function flag(level: 'yellow' | 'red', message: string): Promise<void> {

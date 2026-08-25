@@ -15,7 +15,8 @@ jobs:
           node-version: 22
       - run: npm ci
 
-      # Stubbed until credentials are added as repo secrets — won't fail the run.
+      # continue-on-error because GSC/PostHog can transiently fail without
+      # that being worth failing the whole workflow over.
       - name: Pull GSC data
         continue-on-error: true
         env:

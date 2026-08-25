@@ -91,6 +91,15 @@ export function MuseIcon(props: IconProps) {
   );
 }
 
+export function SageIcon(props: IconProps) {
+  return (
+    <Base {...props}>
+      <path d="M12 6c-2.1-1.4-4.8-1.9-7.3-1.6v13.1c2.5-.3 5.2.2 7.3 1.6 2.1-1.4 4.8-1.9 7.3-1.6V4.4c-2.5-.3-5.2.2-7.3 1.6z" />
+      <path d="M12 6v13.1" />
+    </Base>
+  );
+}
+
 export function PixelIcon(props: IconProps) {
   return (
     <Base {...props}>
@@ -145,6 +154,7 @@ export const AGENT_ICONS: Record<AgentKey, (props: IconProps) => ReactElement> =
   apollo: ApolloIcon,
   echo: EchoIcon,
   muse: MuseIcon,
+  sage: SageIcon,
   pixel: PixelIcon,
   pulse: PulseIcon,
   ledger: LedgerIcon,

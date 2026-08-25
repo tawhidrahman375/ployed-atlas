@@ -1,4 +1,4 @@
-import { AGENT_BY_KEY, ALWAYS_ON, MEMORY_HUB, PIPELINES, freshnessFromHours, type AgentKey } from '../lib/agents';
+import { AGENTS, AGENT_BY_KEY, ALWAYS_ON, MEMORY_HUB, PIPELINES, freshnessFromHours, type AgentKey } from '../lib/agents';
 import { hoursSince, timeAgo } from '../lib/format';
 import { AGENT_ICONS } from './icons';
 
@@ -116,7 +116,7 @@ export default function AgentFleet({
           </div>
           <div>
             <div className="satellite-title">{mnemos.name}</div>
-            <div className="satellite-desc">{mnemos.role} — connects to all 11 agents above.</div>
+            <div className="satellite-desc">{mnemos.role} — connects to all {AGENTS.length - 1} agents above.</div>
             <div className="satellite-meta">
               {memoryCategories.reduce((s, c) => s + c.count, 0)} memories across {memoryCategories.length} categories
             </div>

@@ -2,6 +2,7 @@ import { ask } from '../lib/claude.js';
 import { recall, logAgentRun } from '../mnemos.js';
 import { supabase } from '../lib/supabase.js';
 import { publishDocsPage } from '../lib/seoPublish.js';
+import { extractJsonArray } from '../lib/json.js';
 
 const BUCKET = 'atlas-content';
 const PAGES_PER_RUN = 2;
@@ -12,15 +13,6 @@ function slugify(input: string): string {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 60);
-}
-
-function extractJsonArray(text: string): unknown[] {
-  const start = text.indexOf('[');
-  const end = text.lastIndexOf(']');
-  if (start === -1 || end === -1 || end < start) {
-    throw new Error('No JSON array found in response');
-  }
-  return JSON.parse(text.slice(start, end + 1)) as unknown[];
 }
 
 const SYSTEM =

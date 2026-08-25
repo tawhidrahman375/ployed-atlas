@@ -69,6 +69,7 @@ export function groupBy<T, K extends string>(rows: T[], keyFn: (row: T) => K): M
 const CONTENT_TYPE_LABELS: Record<string, string> = {
   daily_report: 'Daily reports',
   seo_page: 'SEO pages',
+  docs_page: 'Docs pages',
   x_thread: 'X threads',
   linkedin: 'LinkedIn posts',
   comparison_page: 'Comparison pages',

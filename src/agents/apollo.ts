@@ -3,6 +3,7 @@ import { customSearch } from '../lib/brave-search.js';
 import { findEmailByLinkedIn, findEmailByNameAndCompany } from '../lib/anymailFinder.js';
 import { recall, remember, logAgentRun } from '../mnemos.js';
 import { supabase } from '../lib/supabase.js';
+import { extractJsonArray } from '../lib/json.js';
 
 // Anymail Finder only charges a credit on a genuine find, so these caps
 // aren't about rationing a monthly quota — they're a sanity ceiling on live
@@ -74,15 +75,6 @@ const SEARCHES: { niche: string; platform: 'linkedin' | 'x'; query: string }[] =
   { niche: 'web design agency', platform: 'x', query: 'site:x.com "web design agency" founder' },
   { niche: 'SMMA', platform: 'x', query: 'site:x.com SMMA founder' },
 ];
-
-function extractJsonArray(text: string): unknown[] {
-  const start = text.indexOf('[');
-  const end = text.lastIndexOf(']');
-  if (start === -1 || end === -1 || end < start) {
-    throw new Error('No JSON array found in response');
-  }
-  return JSON.parse(text.slice(start, end + 1)) as unknown[];
-}
 
 async function findCandidates(seenHandles: Set<string>): Promise<Candidate[]> {
   const candidates: Candidate[] = [];
