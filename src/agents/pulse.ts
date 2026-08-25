@@ -82,8 +82,8 @@ export async function run() {
     // "today's" numbers when they might be days stale.
     console.error('[Pulse] Saleshandy pull failed:', saleshandy.reason);
     await setMetric('emails_sent_today', 0);
-    await setMetric('instantly_bounced_today', 0);
-    await setMetric('instantly_replies_today', 0);
+    await setMetric('saleshandy_bounced_today', 0);
+    await setMetric('saleshandy_replies_today', 0);
   }
 
   const startOfToday = new Date().toISOString().slice(0, 10);
