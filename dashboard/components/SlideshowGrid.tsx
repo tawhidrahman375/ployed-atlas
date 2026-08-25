@@ -1,5 +1,6 @@
 import { timeAgo } from '../lib/format';
 import { DownloadIcon } from './icons';
+import DownloadAllButton from './DownloadAllButton';
 
 export interface SlideshowRow {
   id: string;
@@ -28,7 +29,15 @@ export default function SlideshowGrid({ slideshows }: { slideshows: SlideshowRow
         <div className="slideshow-card" key={s.id}>
           <div className="slideshow-head">
             <span className="format-badge">{FORMAT_LABELS[s.format] ?? s.format}</span>
-            <span className="content-item-time">{timeAgo(s.created_at)}</span>
+            <div className="slideshow-head-right">
+              <DownloadAllButton
+                slideUrls={s.slide_urls}
+                caption={s.caption}
+                hashtags={s.hashtags}
+                fileNameSeed={`${s.hook ?? s.format}-${s.created_at.slice(0, 10)}`}
+              />
+              <span className="content-item-time">{timeAgo(s.created_at)}</span>
+            </div>
           </div>
           <div className="slideshow-title">{s.hook ?? 'Untitled slideshow'}</div>
           <div className="slideshow-thumbs">

@@ -79,7 +79,7 @@ async function morningBlock(): Promise<void> {
   const leadsFound = await runStep('Apollo', () => apollo.run());
   const emailsSent = await runStep('Echo', () => echo.run());
 
-  // Pulse reads lead_queue/Instantly counts for "today" — must run after
+  // Pulse reads lead_queue/Saleshandy counts for "today" — must run after
   // Apollo/Echo have done today's work, not in parallel with Nova beforehand,
   // or leads_found_today/emails_sent_today always read as 0 (queried before
   // today's rows existed).
@@ -104,7 +104,7 @@ async function morningBlock(): Promise<void> {
     '',
     '## Outreach',
     `Leads found: ${leadsFound ?? 0}`,
-    `Emails queued to Instantly: ${emailsSent ?? 0} (queued ≠ delivered — check Instantly for actual sends, especially while the sending account is still warming up)`,
+    `Emails queued to Saleshandy: ${emailsSent ?? 0} (queued ≠ delivered — check Saleshandy for actual sends, especially while the sending account is still warming up)`,
     '',
     '## Content',
     museOutput
