@@ -230,10 +230,10 @@ async function uploadCaption(runId: number, format: Format, body: string): Promi
   return supabase.storage.from(BUCKET).getPublicUrl(objectPath).data.publicUrl;
 }
 
-// Dashboard only ever queries the most recent 9 (dashboard/app/page.tsx), so
-// anything older than that is dead weight in Storage + the table. Keep the
-// count pinned at 9: each new slideshow evicts the single oldest one.
-const SLIDESHOW_CAP = 9;
+// Dashboard queries the most recent 9 (dashboard/app/page.tsx), but keep one
+// fewer than that in Storage + the table: each new slideshow evicts the
+// single oldest one, so the count stays pinned at 8.
+const SLIDESHOW_CAP = 8;
 
 function storagePathFromPublicUrl(url: string): string | null {
   const marker = `/storage/v1/object/public/${BUCKET}/`;
