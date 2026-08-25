@@ -32,7 +32,9 @@ export default async function Page() {
       supabase.from('dashboard_metrics').select('metric_name, metric_value'),
       supabase.from('agent_logs').select('id, agent, session_type, summary, created_at').order('created_at', { ascending: false }).limit(300),
       supabase.from('risk_flags').select('*').eq('resolved', false).order('created_at', { ascending: false }),
-      supabase.from('content_queue').select('*').eq('status', 'ready').order('created_at', { ascending: false }).limit(150),
+      // Only linkedin/x_thread are real action items — seo_page/docs_page auto-publish
+      // live and daily_report is informational, so none of those need a manual download.
+      supabase.from('content_queue').select('*').eq('status', 'ready').in('type', ['linkedin', 'x_thread']).order('created_at', { ascending: false }).limit(150),
       supabase.from('slideshows').select('*').order('created_at', { ascending: false }).limit(9),
       supabase.from('experiments').select('*').order('started_at', { ascending: false }).limit(20),
       supabase.from('lead_queue').select('status').limit(5000),

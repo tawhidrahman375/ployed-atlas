@@ -22,11 +22,9 @@ async function saveReport(title: string, body: string): Promise<string> {
   if (uploadError) throw uploadError;
 
   const { data: publicUrl } = supabase.storage.from(REPORT_BUCKET).getPublicUrl(objectPath);
-  const { error } = await supabase
-    .from('content_queue')
-    .insert({ type: 'daily_report', title, file_path: publicUrl.publicUrl, status: 'ready' });
-  if (error) throw error;
-
+  // Reports are informational, not an action item — not queued in
+  // content_queue (the dashboard's "ready to download" list), just stored
+  // and linked from this run's agent_logs entry below.
   return publicUrl.publicUrl;
 }
 
