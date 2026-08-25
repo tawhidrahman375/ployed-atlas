@@ -140,9 +140,10 @@ systemctl daemon-reload && systemctl enable --now ployed-atlas.service
 
 **Scheduled blocks** — via `crontab -e`:
 ```
-0 8 * * * cd /root/ployed-atlas && /usr/bin/npm run morning >> logs/morning.log 2>&1
-0 20 * * * cd /root/ployed-atlas && /usr/bin/npm run evening >> logs/evening.log 2>&1
+0 8 * * * cd /root/ployed-atlas && bash scripts/cron-wrapper.sh morning
+0 20 * * * cd /root/ployed-atlas && bash scripts/cron-wrapper.sh evening
 ```
+`cron-wrapper.sh` runs the same `npm run morning`/`evening` (still appending to `logs/{block}.log` as before) but additionally writes one row to Supabase's `agent_logs` table per firing — `agent="Cron"`, exit code, duration — success or failure. Individual agents already log their own runs there via `logAgentRun()`; this covers the case that falls through the cracks, a crash before any agent even runs, so cron's real outcome is queryable from Supabase without SSH access to the VPS. If you're on an older crontab that still calls `npm run morning`/`evening` directly, update it to the wrapper above to pick this up.
 
 **Firewall** — was completely off by default. Now UFW-enabled, only SSH (22) and the webhook port (8787) allowed:
 ```bash
