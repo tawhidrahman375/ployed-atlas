@@ -108,8 +108,8 @@ export default async function Page() {
           gscClicks={Number(metrics.get('gsc_clicks_today') ?? 0)}
           gscImpressions={Number(metrics.get('gsc_impressions_today') ?? 0)}
           posthogEvents={Number(metrics.get('posthog_events_today') ?? 0)}
-          instantlyBounced={Number(metrics.get('instantly_bounced_today') ?? 0)}
-          instantlyReplies={Number(metrics.get('instantly_replies_today') ?? 0)}
+          saleshandyBounced={Number(metrics.get('saleshandy_bounced_today') ?? 0)}
+          saleshandyReplies={Number(metrics.get('saleshandy_replies_today') ?? 0)}
         />
       </section>
 

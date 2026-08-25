@@ -1,6 +1,6 @@
 import { JWT } from 'google-auth-library';
 import { requireEnv } from '../lib/env.js';
-import { getCampaignAnalytics } from '../lib/instantly.js';
+import { getSequenceAnalytics } from '../lib/saleshandy.js';
 import { logAgentRun } from '../mnemos.js';
 import { supabase } from '../lib/supabase.js';
 import { setMetric } from '../lib/metrics.js';
@@ -46,14 +46,14 @@ export async function pullPostHog(): Promise<{ eventsToday: number }> {
   return { eventsToday: data.results?.[0]?.[0] ?? 0 };
 }
 
-async function pullInstantlyStats(): Promise<{ sent: number; bounced: number; replies: number }> {
+async function pullSaleshandyStats(): Promise<{ sent: number; bounced: number; replies: number }> {
   const today = new Date().toISOString().slice(0, 10);
-  const overview = await getCampaignAnalytics(today, today);
+  const overview = await getSequenceAnalytics(today, today);
   return { sent: overview.emails_sent_count, bounced: overview.bounced_count, replies: overview.reply_count };
 }
 
 export async function run() {
-  const [gsc, posthog, instantly] = await Promise.allSettled([pullGSC(), pullPostHog(), pullInstantlyStats()]);
+  const [gsc, posthog, saleshandy] = await Promise.allSettled([pullGSC(), pullPostHog(), pullSaleshandyStats()]);
 
   if (gsc.status === 'fulfilled') {
     await setMetric('gsc_clicks_today', gsc.value.clicks);
@@ -71,16 +71,16 @@ export async function run() {
     await setMetric('posthog_events_today', 0);
   }
 
-  if (instantly.status === 'fulfilled') {
-    await setMetric('emails_sent_today', instantly.value.sent);
-    await setMetric('instantly_bounced_today', instantly.value.bounced);
-    await setMetric('instantly_replies_today', instantly.value.replies);
+  if (saleshandy.status === 'fulfilled') {
+    await setMetric('emails_sent_today', saleshandy.value.sent);
+    await setMetric('saleshandy_bounced_today', saleshandy.value.bounced);
+    await setMetric('saleshandy_replies_today', saleshandy.value.replies);
   } else {
-    // All three Instantly-sourced metrics belong to this one pull, so a
+    // All three Saleshandy-sourced metrics belong to this one pull, so a
     // failure here has to reset all three — leaving bounced/replies at
     // whatever they were from the last successful run would show them as
     // "today's" numbers when they might be days stale.
-    console.error('[Pulse] Instantly pull failed:', instantly.reason);
+    console.error('[Pulse] Saleshandy pull failed:', saleshandy.reason);
     await setMetric('emails_sent_today', 0);
     await setMetric('instantly_bounced_today', 0);
     await setMetric('instantly_replies_today', 0);
@@ -93,6 +93,6 @@ export async function run() {
     .gte('created_at', startOfToday);
   await setMetric('leads_found_today', count ?? 0);
 
-  const wired = [gsc, posthog, instantly].filter((r) => r.status === 'fulfilled').length;
+  const wired = [gsc, posthog, saleshandy].filter((r) => r.status === 'fulfilled').length;
   await logAgentRun('Pulse', 'morning', `Pulled analytics (${wired}/3 sources wired).`, { wired });
 }

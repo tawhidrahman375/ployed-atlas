@@ -131,7 +131,7 @@ export async function run() {
   // leads only), then name+company fallback (any platform, including X,
   // which never got an enrichment attempt before this). Leads that still
   // don't get enriched queue for manual X DM / LinkedIn comment outreach;
-  // enriched ones become eligible for Echo's Instantly path immediately.
+  // enriched ones become eligible for Echo's Saleshandy path immediately.
   let enriched = 0;
   let attempts = 0;
   for (const c of candidates) {

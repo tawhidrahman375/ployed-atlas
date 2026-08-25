@@ -18,8 +18,8 @@ export interface StatGridProps {
   gscClicks: number;
   gscImpressions: number;
   posthogEvents: number;
-  instantlyBounced: number;
-  instantlyReplies: number;
+  saleshandyBounced: number;
+  saleshandyReplies: number;
 }
 
 export default function StatGrid(props: StatGridProps) {
@@ -29,9 +29,9 @@ export default function StatGrid(props: StatGridProps) {
         <div className="stat-group-label">Outreach</div>
         <div className="stat-grid">
           <Tile icon={<SearchIcon size={16} />} value={formatNumber(props.leadsFound)} label="Leads found today" />
-          <Tile icon={<EchoIcon size={16} />} value={formatNumber(props.emailsSent)} label="Emails sent today" />
-          <Tile icon={<ReplyIcon size={16} />} value={formatNumber(props.instantlyReplies)} label="Replies today" />
-          <Tile icon={<AlertTriangleIcon size={16} />} value={formatNumber(props.instantlyBounced)} label="Bounced today" />
+          <Tile icon={<EchoIcon size={16} />} value={formatNumber(props.emailsSent)} label="Emails delivered today" />
+          <Tile icon={<ReplyIcon size={16} />} value={formatNumber(props.saleshandyReplies)} label="Replies today" />
+          <Tile icon={<AlertTriangleIcon size={16} />} value={formatNumber(props.saleshandyBounced)} label="Bounced today" />
         </div>
       </div>
       <div className="stat-group">
