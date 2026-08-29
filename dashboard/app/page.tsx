@@ -10,6 +10,7 @@ import ContentFeed from '../components/ContentFeed';
 import SlideshowGrid from '../components/SlideshowGrid';
 import ExperimentsList from '../components/ExperimentsList';
 import ActivityTimeline from '../components/ActivityTimeline';
+import DataFetchError from '../components/DataFetchError';
 import {
   AlertTriangleIcon,
   ClockIcon,
@@ -27,19 +28,40 @@ function metricMap(rows: { metric_name: string; metric_value: string | null }[] 
 }
 
 export default async function Page() {
-  const [{ data: metricsRows }, { data: logs }, { data: risks }, { data: content }, { data: slideshows }, { data: experiments }, { data: leadStatuses }, { data: memoryRows }] =
-    await Promise.all([
-      supabase.from('dashboard_metrics').select('metric_name, metric_value'),
-      supabase.from('agent_logs').select('id, agent, session_type, summary, created_at').order('created_at', { ascending: false }).limit(300),
-      supabase.from('risk_flags').select('*').eq('resolved', false).order('created_at', { ascending: false }),
-      // Only linkedin/x_thread are real action items — seo_page/docs_page auto-publish
-      // live and daily_report is informational, so none of those need a manual download.
-      supabase.from('content_queue').select('*').eq('status', 'ready').in('type', ['linkedin', 'x_thread']).order('created_at', { ascending: false }).limit(150),
-      supabase.from('slideshows').select('*').order('created_at', { ascending: false }).limit(9),
-      supabase.from('experiments').select('*').order('started_at', { ascending: false }).limit(20),
-      supabase.from('lead_queue').select('status').limit(5000),
-      supabase.from('agent_memory').select('category').limit(5000),
-    ]);
+  const [
+    { data: metricsRows, error: metricsError },
+    { data: logs, error: logsError },
+    { data: risks, error: risksError },
+    { data: content, error: contentError },
+    { data: slideshows, error: slideshowsError },
+    { data: experiments, error: experimentsError },
+    { data: leadStatuses, error: leadStatusesError },
+    { data: memoryRows, error: memoryError },
+  ] = await Promise.all([
+    supabase.from('dashboard_metrics').select('metric_name, metric_value'),
+    supabase.from('agent_logs').select('id, agent, session_type, summary, created_at').order('created_at', { ascending: false }).limit(300),
+    supabase.from('risk_flags').select('*').eq('resolved', false).order('created_at', { ascending: false }),
+    // Only linkedin/x_thread are real action items — seo_page/docs_page auto-publish
+    // live and daily_report is informational, so none of those need a manual download.
+    supabase.from('content_queue').select('*').eq('status', 'ready').in('type', ['linkedin', 'x_thread']).order('created_at', { ascending: false }).limit(150),
+    supabase.from('slideshows').select('*').order('created_at', { ascending: false }).limit(9),
+    supabase.from('experiments').select('*').order('started_at', { ascending: false }).limit(20),
+    supabase.from('lead_queue').select('status').limit(5000),
+    supabase.from('agent_memory').select('category').limit(5000),
+  ]);
+
+  const dataErrors = [
+    { source: "Today’s numbers", error: metricsError },
+    { source: 'Agent fleet activity', error: logsError },
+    { source: 'Risk flags', error: risksError },
+    { source: 'Content queue', error: contentError },
+    { source: 'Slideshows', error: slideshowsError },
+    { source: 'Experiments', error: experimentsError },
+    { source: 'Lead pipeline', error: leadStatusesError },
+    { source: 'Agent memory', error: memoryError },
+  ]
+    .filter((e) => e.error)
+    .map((e) => ({ source: e.source, message: e.error!.message }));
 
   const metrics = metricMap(metricsRows);
   const mrr = Number(metrics.get('mrr_pence') ?? 0) / 100;
@@ -82,6 +104,8 @@ export default async function Page() {
           <LiveClock initial={new Date(nowIso).toLocaleString('en-GB', { timeZone: 'UTC' }) + ' UTC'} />
         </div>
       </div>
+
+      <DataFetchError errors={dataErrors} />
 
       <Hero mrr={mrr} />
 
