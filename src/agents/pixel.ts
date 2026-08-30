@@ -230,6 +230,52 @@ async function uploadCaption(runId: number, format: Format, body: string): Promi
   return supabase.storage.from(BUCKET).getPublicUrl(objectPath).data.publicUrl;
 }
 
+// Dashboard queries the most recent 9 (dashboard/app/page.tsx), but keep one
+// fewer than that in Storage + the table: each new slideshow evicts the
+// single oldest one, so the count stays pinned at 8.
+const SLIDESHOW_CAP = 8;
+
+function storagePathFromPublicUrl(url: string): string | null {
+  const marker = `/storage/v1/object/public/${BUCKET}/`;
+  const idx = url.indexOf(marker);
+  return idx === -1 ? null : url.slice(idx + marker.length);
+}
+
+async function pruneOldSlideshows(): Promise<void> {
+  const { data: stale, error } = await supabase
+    .from('slideshows')
+    .select('id, slide_urls, caption_url')
+    .order('created_at', { ascending: false })
+    .range(SLIDESHOW_CAP, 100000);
+  if (error) throw error;
+  if (!stale || !stale.length) return;
+
+  const objectPaths = stale
+    .flatMap((row) => [...((row.slide_urls as string[] | null) ?? []), ...(row.caption_url ? [row.caption_url as string] : [])])
+    .map(storagePathFromPublicUrl)
+    .filter((p): p is string => p !== null);
+  if (objectPaths.length) {
+    const { error: removeError } = await supabase.storage.from(BUCKET).remove(objectPaths);
+    if (removeError) throw removeError;
+  }
+
+  const { error: deleteError } = await supabase
+    .from('slideshows')
+    .delete()
+    .in('id', stale.map((row) => row.id));
+  if (deleteError) throw deleteError;
+}
+
+// A prune failure shouldn't turn a successfully-saved slideshow into a
+// reported failure — log and move on instead of throwing into run()'s catch.
+async function pruneAfterSave(): Promise<void> {
+  try {
+    await pruneOldSlideshows();
+  } catch (err) {
+    console.error('[Pixel] pruneOldSlideshows failed:', (err as Error).message);
+  }
+}
+
 async function saveSlideshow(
   format: Format,
   hook: string,
@@ -282,6 +328,7 @@ export async function run(): Promise<string | null> {
         content.caption,
         content.hashtags
       );
+      await pruneAfterSave();
       await logAgentRun('Pixel', 'morning', `Produced tools-list slideshow: "${content.hook}"`);
       return content.hook;
     }
@@ -289,6 +336,7 @@ export async function run(): Promise<string | null> {
     const content = await generatePainHookContent();
     const { buffers, photoIds } = await buildPainHookSlides(content, recentPhotoIds);
     await saveSlideshow(format, content.hook, buffers, photoIds, [], content.caption, content.hashtags);
+    await pruneAfterSave();
     await logAgentRun('Pixel', 'morning', `Produced pain-hook slideshow: "${content.hook}"`);
     return content.hook;
   } catch (err) {
