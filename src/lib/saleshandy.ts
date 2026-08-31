@@ -157,23 +157,66 @@ async function resolveStepId(sequenceId: string): Promise<string> {
 // source seen so far confirms its literal enum string, so it's deliberately
 // not used as a guess.
 //
-// ⚠️ Still NOT confirmed: the exact per-prospect field-name keys inside
-// prospectList. `email` is likely flat (Saleshandy's read-side /contacts
-// endpoint returns a flat `email` field). Names/company are more uncertain —
-// the read-side API stores them as labeled attributes with literal string
-// keys "First Name" / "Last Name" (confirmed from prospects/list.js's
-// getAttr(row, 'First Name') calls), and this write endpoint is literally
-// named "import-with-field-name" — suggesting import entries key by those
-// same human-readable labels, not camelCase (firstName/lastName). Kept as
-// camelCase below since I have no confirmed default label for "company"
-// either — if this 400s again on prospectList specifically (not stepId/
-// verifyProspects/conflictAction, which are now fixed), that's the next
-// thing to fix, and the error message will likely name the exact property.
+// Per-prospect keys inside prospectList — REVISED after `firstName` /
+// `companyName` / `customVariables` were confirmed rejected live (the flat
+// camelCase guess this comment used to describe). `stepId` / `verifyProspects`
+// / `conflictAction` were NOT flagged as rejected, so those stay as-is.
+//
+// New shape is a `fields` map keyed by the prospect field's literal display
+// name, not camelCase. Evidence, gathered from the @saleshandy/saleshandy-cli
+// source (pulled from registry.npmjs.org — same technique as the rest of this
+// file, since this session's network egress still blocks every
+// saleshandy.com / open-api.saleshandy.com host, confirmed again on this
+// pass: direct curl gets a 403 from the egress proxy, and WebFetch reports
+// EGRESS_BLOCKED for docs.saleshandy.com, developer.saleshandy.com, and even
+// third-party proxies like r.jina.ai):
+//   - prospects/list.js reads each contact's custom data as
+//     `row.attributes.find(a => a.key === 'First Name').value` straight off
+//     the raw API response — i.e. the read side represents fields as
+//     {key, value} pairs keyed by literal label ("First Name" / "Last Name"),
+//     not firstName/lastName.
+//   - The endpoint here is literally named "import-with-field-name" (as
+//     opposed to importing by field ID — see the next point), which only
+//     makes sense if you address fields by that same literal name string.
+//   - prospects/attribute-set.js's single-attribute endpoint
+//     (`POST /prospects/{id}/attribute`) uses `{fieldId, attributeValue}` —
+//     proving Saleshandy's write-side DTOs do NOT just mirror the read
+//     side's {key, value} naming. So while "fields keyed by literal label"
+//     is well-evidenced, the exact wrapper shape below (a `fields` object
+//     map vs. an array of {fieldName, value} pairs) is still a best guess,
+//     not a confirmed fix — a public web search corroborates "field mappings
+//     include standard fields like 'First Name', 'Last Name'" but no example
+//     request body for THIS endpoint turned up anywhere reachable.
+//
+// ⚠️ `personalization` → a "Personalization" custom field is kept as a guess
+// too, and is a bigger open question than a field-name typo: Saleshandy
+// sequences send from pre-written per-step templates, so a per-lead
+// Claude-drafted subject+body only reaches the recipient at all if the
+// step's template references this exact field name as a merge tag (e.g.
+// `{{Personalization}}`) AND that custom field already exists in the
+// account. Neither is confirmed.
+//
+// Next step to actually confirm this: run `npm run test:echo` (pushes ONE
+// real lead and prints the raw response/error instead of a queued/failed
+// count for 30) and check the result —
+//   - 200/202: this shape is right, ship it.
+//   - 400 naming a specific property (e.g. "property fields should not
+//     exist" or an enum/type mismatch): that error text is the fastest way
+//     to nail the exact wrapper, paste it back for the next fix.
+//   - Only way to skip the guessing entirely: open
+//     https://open-api.saleshandy.com/api-doc/ (Swagger UI — found via web
+//     search, not fetchable from this sandbox) from a normal browser and
+//     read the "Import Prospects by Field Name" request schema directly.
 export async function addProspectToSequence(
   sequenceId: string,
   prospect: { email: string; firstName?: string; companyName?: string; personalization?: string }
 ): Promise<string> {
   const stepId = await resolveStepId(sequenceId);
+
+  const fields: Record<string, string> = {};
+  if (prospect.firstName) fields['First Name'] = prospect.firstName;
+  if (prospect.companyName) fields['Company Name'] = prospect.companyName;
+  if (prospect.personalization) fields['Personalization'] = prospect.personalization;
 
   const res = await fetch(`${BASE_URL}/api/open-api/v1/sequences/prospects/import-with-field-name`, {
     method: 'POST',
@@ -189,17 +232,7 @@ export async function addProspectToSequence(
       prospectList: [
         {
           email: prospect.email,
-          firstName: prospect.firstName,
-          companyName: prospect.companyName,
-          // ⚠️ Still the biggest open question in this file: does Saleshandy
-          // even support injecting a full Claude-drafted subject+body per
-          // prospect through this field, the way Instantly's flat
-          // "personalization" field did? Saleshandy sequences are step-based
-          // with their own pre-written templates per step — there may be
-          // nowhere for a freeform per-lead email body to land here at all.
-          // customVariables is a guess at the mechanism — verify this before
-          // assuming Echo's drafts are reaching anyone once this ships.
-          customVariables: prospect.personalization ? { personalization: prospect.personalization } : undefined,
+          fields,
         },
       ],
     }),
