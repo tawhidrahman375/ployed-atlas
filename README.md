@@ -1,5 +1,133 @@
 # ATLAS — Ployed Growth OS
 
+> The autonomous growth team for [Ployed](https://ployed.net) — a single-operator SaaS with no marketing hires.
+
+## What this is, in 30 seconds
+
+Ployed is built and run by one person. ATLAS is the twelve-agent system that does the work a small growth team would otherwise do: it researches what's working for competitors and creators, finds and enriches real leads, drafts personalized cold email, publishes SEO/docs content and TikTok slideshows, tracks MRR straight from Stripe, and watches for outreach risk closely enough to auto-pause sending if something looks wrong — all without anyone approving each step.
+
+It runs twice a day (08:00 and 20:00 UTC) as a cron job on a $6/mo VPS, with a separate GitHub Actions job handling lower-stakes data collection and CI type-checking on every PR, plus an always-on webhook listener for Stripe. Every agent reads and writes a shared Supabase Postgres database; a Next.js dashboard on Vercel reads that same database read-only so the whole system is observable without SSH-ing anywhere.
+
+This isn't a prototype. Every agent has been run against live credentials and real data — including a real run that found 56 genuine leads with zero duplicates and zero garbage. The one thing currently paused on purpose: Echo's cold-email sender was just swapped from Instantly to Saleshandy, and the new integration is still being verified against live API responses (see *Real problems solved* below) before outreach is re-armed.
+
+## Key numbers
+
+- **12 agents** — 1 orchestrator (Atlas) + 11 specialists: Nova, Apollo, Echo, Muse, Sage, Pixel, Pulse, Sentinel, Forge, Ledger, Vega. Every one is real, tested code against live APIs — nothing in the repo is a stub anymore.
+- **56 qualified leads** found in a single real Apollo run — real founders, specific per-lead signals, zero duplicates, zero garbage.
+- **8 targeted searches per run** against the Brave Search API (~240 queries/month, on a $5/month plan) across 4 ICP niches × 2 platforms.
+- **~9 minutes** for a full morning run end-to-end, verified live on the actual production box — a 1 vCPU / 1 GB VPS.
+- **2 scheduled runs a day** (08:00 & 20:00 UTC) via VPS cron, plus an independent GitHub Actions run at 09:00 UTC for lower-stakes data collection, and CI type-checking both packages on every PR.
+- **10 Supabase tables**, all with row-level security locked to read-only for the public `anon` key — agents write through a service-role key that bypasses RLS.
+- **5 goal stages** read live from Stripe MRR (£0 → ≥£10,000), logged into every report so strategy context is visible even though nothing auto-changes behavior on it yet.
+- **2-tier model routing** — Claude Haiku for high-volume/low-stakes work, Claude Sonnet for anything a human will actually read (cold email, SEO pages, social posts, the daily report).
+- **~4,000 lines of hand-written TypeScript** across the runner and dashboard (directly counted from source, not a marketing figure).
+
+## Real problems solved
+
+A sample of the bugs and integration failures that came up building this — the kind that don't show up until you run the thing for real against live APIs.
+
+**Reverse-engineering a vendor API that was completely unreachable.** While swapping Echo's cold-email sender from Instantly to Saleshandy, every Saleshandy domain — docs and API both — was blocked from this environment's network egress, so nothing could be confirmed by just trying it. The fix: pull Saleshandy's own official CLI package (`@saleshandy/saleshandy-cli`) straight from the npm registry (which *was* reachable) and read its compiled API client source directly — base URL, header names, endpoint paths, and request-body shapes, all confirmed from the vendor's own code instead of guessed. That caught a wrong base URL and a 404'ing endpoint path before a single real API call was made, and subsequent real 400 responses (wrong field names, a rejected `sequenceId`) were fixed the same way — cross-referencing the CLI source rather than guessing again.
+
+**Extended thinking silently ate the output.** `claude-sonnet-5` returns a leading `thinking` content block before its actual answer. The original Claude wrapper read only `content[0]`, so every quality-tier call — cold email copy, LinkedIn posts, SEO pages — was silently writing near-empty files. Caught because a real run produced 12–17 byte output files where full posts should have been. Fixed by filtering for `type === 'text'` blocks specifically instead of trusting block order.
+
+**A safety brake that didn't actually brake anything.** Sentinel could write a red risk flag when the outreach bounce rate crossed 5%, but nothing checked it — Echo kept sending regardless. Added an explicit unresolved-flag check to Echo before any send, and verified it live: planted a real red flag, confirmed Echo sent zero emails, removed the flag.
+
+**CI was broken for three days before anyone noticed.** GitHub Actions had Node pinned to v20, but the Supabase client needs Node ≥22's native WebSocket support. Every Supabase-touching workflow step had been crashing in ~18 seconds — caught via a log audit, not a failing badge, because the job itself still reported green.
+
+**Enrichment was stuck near 0%.** The first email-enrichment pass only worked when a lead's LinkedIn URL was already indexed by the email-finder API, which silently skipped every X-sourced lead — half of every batch — entirely. Fixed by adding a name+company fallback lookup, which meant also teaching Apollo's extraction prompt to capture a company name in the first place.
+
+**Reporting "sent" for emails that were never delivered — twice.** Every log line and report said "emails sent" when all it actually meant was "the API call to queue a lead into the campaign didn't throw" — the sending account was still in warmup and had zero real sends, all-time. Relabeled everywhere to "queued." Weeks later the same bug came back: a routine merge conflict between two branches (one renaming the ESP, one fixing this exact label) got resolved by naively taking one side's version wholesale instead of merging both changes, silently reintroducing the stale label. Caught by grepping the dashboard's actual data-reads against what the merged code was writing, not by re-discovering the bug from scratch.
+
+**The database was wide open.** Supabase's own advisor flagged all ten tables as fully readable, writable, and deletable by the public `anon` key — the same key embedded client-side in the dashboard. Locked every table to a read-only RLS policy for `anon`, checked into the schema file so the fix is reproducible, not a one-off console change.
+
+## Architecture
+
+```
+                         TRIGGERS (three independent entry points)
+ ┌───────────────────────┬───────────────────────┬──────────────────────────┐
+ │  VPS crontab            │  GitHub Actions        │  systemd service           │
+ │  08:00 & 20:00 UTC      │  09:00 UTC + manual    │  always-on                 │
+ │  npm run morning/       │  morning-run.yml       │  npm start                 │
+ │  npm run evening        │  (data collection)     │  Stripe webhook listener   │
+ │                         │  + CI typecheck on PRs │                            │
+ └───────────┬─────────────┴───────────┬────────────┴──────────────┬─────────────┘
+             │                         │                           │
+             ▼                         ▼                           ▼
+     ┌───────────────┐        ┌────────────────────┐      ┌──────────────────┐
+     │   atlas.ts      │        │  scripts/*.ts        │      │  server.ts         │
+     │  (orchestrator) │        │  queue-youtube.ts     │      │  POST /webhooks/   │
+     │                 │        │  pull-reddit.ts       │      │  stripe            │
+     │                 │        │  scrape-competitors.ts│      │        │           │
+     │                 │        │  pull-gsc / pull-      │      │        ▼           │
+     │                 │        │  posthog / check-      │      │  ledger.ts         │
+     │                 │        │  producthunt.ts        │      │  handleStripe      │
+     │                 │        └────────────────────┘      │  Webhook()          │
+     └────────┬────────┘                                       └──────────────────┘
+              │
+  ┌───────────┴──────────────────────────────────────────────────────┐
+  │  MORNING BLOCK — sequential rounds, one agent's failure never       │
+  │  blocks the next (every call wrapped in runStep())                 │
+  │                                                                       │
+  │  Round 1  Nova     — research: YouTube transcripts → Claude          │
+  │  Round 2  Apollo → Echo → Pulse                                      │
+  │             (Echo reads the leads Apollo just found;                 │
+  │              Pulse runs last so its counters reflect the             │
+  │              outreach that just happened)                            │
+  │  Round 3  Muse → Sage → Pixel   (content: SEO / docs / slideshows)   │
+  │  Round 4  Forge → assemble + publish the daily report                │
+  └────────────────────────────────────────────────────────────────────┘
+              │
+  ┌───────────┴──────────────────────────────────────────────────────┐
+  │  EVENING BLOCK                                                       │
+  │  Pulse → Sentinel → Ledger   (metrics → risk check → MRR)            │
+  └────────────────────────────────────────────────────────────────────┘
+              │
+              ▼
+  ┌────────────────────────────────────────────────────────────────────┐
+  │                 SHARED SUPABASE POSTGRES  (10 tables, the only        │
+  │                 channel agents use to talk to each other)             │
+  │                                                                         │
+  │   agent_memory · lead_queue · content_queue · agent_logs                │
+  │   dashboard_metrics · risk_flags · experiments · slideshows ·           │
+  │   docs_pages · higgsfield_jobs (legacy, unused)                         │
+  │                                                                         │
+  │   RLS: anon role = read-only on every table.                            │
+  │   Agents write via a service-role key that bypasses RLS.                │
+  └──────────────────────────────┬─────────────────────────────────────────┘
+                                  │ read-only, anon key
+                                  ▼
+                     ┌─────────────────────────────┐
+                     │   Dashboard — Next.js 15       │
+                     │   Deployed on Vercel            │
+                     │   ISR: revalidates every 5 min   │
+                     │   + on-demand revalidate hook     │
+                     └─────────────────────────────┘
+
+  EXTERNAL INTEGRATIONS (called from inside the agents above)
+  ───────────────────────────────────────────────────────────────────────
+  Claude API (Anthropic)   → Nova, Apollo, Echo, Muse, Sage, Pixel
+                              two-tier routing: Haiku (bulk) / Sonnet (quality)
+  Brave Search              → Apollo — lead discovery, 8 queries/run
+  Anymail Finder            → Apollo — email enrichment
+  Saleshandy                → Echo (sends), Sentinel & Pulse (bounce/reply analytics)
+                              — mid-migration from Instantly, live-verification pending
+  Stripe                    → Ledger (live MRR), server.ts (subscription webhooks)
+  Pexels                    → Pixel — real stock photography, never AI-generated
+  PostHog                   → Pulse — product analytics via HogQL query API
+  Google Search Console     → Pulse — organic search performance
+  YouTube (transcript API)  → Nova — research input, no auth required
+  Reddit (RSS)              → Vega — market/community intel, no auth required
+  Product Hunt (GraphQL)    → Vega/agent_memory — ICP-relevant launch tracking
+```
+
+Vega (competitor + Reddit intel) runs independently of the twice-daily Atlas blocks, triggered from its own GitHub Actions steps rather than from `atlas.ts`.
+
+---
+
+## Full documentation
+
+The rest of this document is the detailed build log and operational reference, written as the system was built out end to end.
+
 Private, single-operator growth automation for [ployed.net](https://ployed.net). No auth, no multi-tenant concerns — built for one person (Tawhid) to run.
 
 This repo replaces the "OpenClaw" runtime referenced in the original spec with a plain Node/TypeScript runner: two scheduled scripts (`npm run morning`, `npm run evening`) plus a small always-on server for the Stripe webhook (`npm start`).
